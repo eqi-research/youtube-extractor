@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Data Extractor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://unpkg.com/tabulator-tables@6.2.5/dist/css/tabulator_simple.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/tabulator-tables@6.2.5/dist/js/tabulator.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="7" fill="#FF0000"/>
+        <polygon points="11,9 11,19 20,14" fill="white"/>
+      </svg>
+      <span>YT Extractor</span>
+    </div>
+    <div class="apikey-area">
+      <label class="label-sm" for="apiKeyInput">API Key</label>
+      <div class="apikey-wrap">
+        <input type="password" id="apiKeyInput" class="input" placeholder="AIzaSy...">
+        <button id="toggleApiKey" class="btn-icon" title="Mostrar/ocultar chave">&#128065;</button>
+      </div>
+      <button id="saveApiKey" class="btn btn-sm btn-ghost">Salvar</button>
+      <span id="apiKeyStatus"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <!-- Sidebar collapse toggle -->
+    <button id="sidebarToggle" class="sidebar-toggle" title="Expandir/colapsar menu">&#9664;</button>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-label">Listas</span>
+        <button id="newListBtn" class="btn btn-sm btn-accent">+ Nova</button>
+      </div>
+      <div id="listItems" class="list-items"></div>
+      <div class="sidebar-foot">
+        <button id="importListBtn" class="btn btn-ghost btn-sm w-full">&#8679; Importar JSON</button>
+        <input type="file" id="importListFile" accept=".json" style="display:none">
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main-content">
+
+      <!-- Panel: Canal -->
+      <section class="panel" id="channelPanel">
+        <div class="panel-header">
+          <h2 class="panel-title" id="activeListName">&#8592; Selecione ou crie uma lista</h2>
+          <div class="list-actions" id="listActions" style="display:none">
+            <button id="renameListBtn"    class="btn btn-sm btn-ghost">Renomear</button>
+            <button id="duplicateListBtn" class="btn btn-sm btn-ghost">Duplicar</button>
+            <button id="exportListBtn"    class="btn btn-sm btn-ghost">&#8681; JSON</button>
+            <button id="deleteListBtn"    class="btn btn-sm btn-danger">Excluir</button>
+          </div>
+        </div>
+
+        <!-- Adicionar canal -->
+        <div id="addChannelArea" style="display:none">
+          <div class="add-channel-row">
+            <input type="text" id="channelInput" class="input flex-1"
+                   placeholder="@handle  ·  youtube.com/@handle  ·  UCxxxxxxxx">
+            <button id="addChannelBtn" class="btn btn-accent">Buscar canal</button>
+          </div>
+
+          <!-- Preview do canal -->
+          <div id="channelPreview" class="channel-preview" style="display:none">
+            <img id="previewThumb" src="" alt="" class="preview-thumb">
+            <div class="preview-info">
+              <strong id="previewName"></strong>
+              <span id="previewHandle" class="text-muted"></span>
+              <span id="previewSubs"   class="text-muted"></span>
+            </div>
+            <div class="preview-btns">
+              <button id="confirmAddChannel" class="btn btn-accent btn-sm">+ Adicionar</button>
+              <button id="cancelAddChannel"  class="btn btn-ghost  btn-sm">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista de canais -->
+        <div id="channelList" class="channel-list"></div>
+      </section>
+
+      <!-- Panel: Filtros -->
+      <section class="panel" id="filtersPanel" style="display:none">
+        <h3 class="section-title">Configurar extração</h3>
+
+        <div class="filters-grid">
+
+          <!-- Campos -->
+          <div class="filter-group">
+            <span class="filter-group-label">Campos dos vídeos</span>
+            <div class="fields-list" id="fieldsList">
+
+              <!-- Identificação -->
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label">
+                    <input type="checkbox" class="fg-master" data-group="identification" checked>
+                    <span>Identificação</span>
+                  </label>
+                  <button class="fg-toggle open" type="button" data-group="identification">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-identification">
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="Canal"       checked> Canal</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="Handle"      checked> Handle</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="Título"      checked> Título</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="ID do Vídeo" checked> ID do Vídeo</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="URL"         checked> URL</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="Thumbnail"         > Thumbnail (URL)</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="identification" data-field="Descrição"         > Descrição</label>
+                </div>
+              </div>
+
+              <!-- Datas -->
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label">
+                    <input type="checkbox" class="fg-master" data-group="dates" checked>
+                    <span>Datas</span>
+                  </label>
+                  <button class="fg-toggle open" type="button" data-group="dates">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-dates">
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="dates" data-field="Publicado em"       checked> Publicado em</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="dates" data-field="Publicado em (ISO)"        > Publicado em (ISO)</label>
+                </div>
+              </div>
+
+              <!-- Estatísticas -->
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label">
+                    <input type="checkbox" class="fg-master" data-group="statistics" checked>
+                    <span>Estatísticas</span>
+                  </label>
+                  <button class="fg-toggle open" type="button" data-group="statistics">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-statistics">
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="statistics" data-field="Views"              checked> Views</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="statistics" data-field="Likes"              checked> Likes</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="statistics" data-field="Comentários"        checked> Comentários</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="statistics" data-field="Inscritos do Canal" checked> Inscritos do Canal</label>
+                </div>
+              </div>
+
+              <!-- Detalhes técnicos -->
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label">
+                    <input type="checkbox" class="fg-master" data-group="contentDetails">
+                    <span>Detalhes técnicos</span>
+                  </label>
+                  <button class="fg-toggle closed" type="button" data-group="contentDetails">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-contentDetails" style="display:none">
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="contentDetails" data-field="Duração"     > Duração (HH:MM:SS)</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="contentDetails" data-field="Duração (seg)"> Duração (segundos)</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="contentDetails" data-field="Qualidade"   > Qualidade (HD/SD)</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="contentDetails" data-field="Tem Legenda" > Tem Legenda</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="contentDetails" data-field="Projeção"    > Projeção</label>
+                </div>
+              </div>
+
+              <!-- Conteúdo -->
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label">
+                    <input type="checkbox" class="fg-master" data-group="content">
+                    <span>Conteúdo</span>
+                  </label>
+                  <button class="fg-toggle closed" type="button" data-group="content">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-content" style="display:none">
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="content" data-field="Tags"        > Tags</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="content" data-field="Categoria ID"> Categoria ID</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="content" data-field="Idioma"      > Idioma</label>
+                </div>
+              </div>
+
+              <!-- Status -->
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label">
+                    <input type="checkbox" class="fg-master" data-group="status">
+                    <span>Status</span>
+                  </label>
+                  <button class="fg-toggle closed" type="button" data-group="status">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-status" style="display:none">
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="status" data-field="Privacidade"  > Privacidade</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="status" data-field="Para Crianças"> Para Crianças</label>
+                  <label class="fi-label"><input type="checkbox" class="fi" data-group="status" data-field="Licença"      > Licença</label>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Filtros de data/quantidade -->
+          <div class="filter-group">
+            <span class="filter-group-label">Filtros</span>
+            <div class="date-filters">
+
+              <label class="date-row">
+                <span>De</span>
+                <input type="date" id="dateFrom" class="input input-sm">
+              </label>
+
+              <label class="date-row">
+                <span>Até</span>
+                <input type="date" id="dateTo" class="input input-sm">
+              </label>
+
+              <label class="date-row">
+                <span>Máx. vídeos por canal</span>
+                <input type="number" id="maxResults" class="input input-sm" value="500" min="1" max="10000">
+              </label>
+
+              <div class="date-separator">Filtro de duração</div>
+
+              <label class="date-row">
+                <span>Duração mín. (seg)</span>
+                <input type="number" id="durationMin" class="input input-sm" placeholder="ex: 0" min="0">
+              </label>
+
+              <label class="date-row">
+                <span>Duração máx. (seg)</span>
+                <input type="number" id="durationMax" class="input input-sm" placeholder="ex: 60 para Shorts" min="0">
+              </label>
+
+            </div>
+
+            <div class="quota-hint">
+              <strong>Cota estimada:</strong> <span id="quotaEstimate">—</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="fetch-area">
+          <button id="fetchBtn" class="btn btn-accent btn-lg">&#9654; Buscar dados</button>
+          <div id="progressArea" style="display:none">
+            <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+            <span id="progressText" class="text-muted"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel: Tabela -->
+      <section class="panel" id="tablePanel" style="display:none">
+        <div class="table-topbar">
+          <span id="tableStats" class="text-muted"></span>
+          <div class="table-actions">
+            <button id="showAllRowsBtn" class="btn btn-sm btn-ghost">Mostrar todas as linhas</button>
+            <button id="exportCsvBtn"   class="btn btn-sm btn-ghost">Export CSV</button>
+            <button id="exportXlsxBtn"  class="btn btn-sm btn-accent">Export XLSX</button>
+          </div>
+        </div>
+        <div id="dataTable"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Modal -->
+  <div id="modalOverlay" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <p id="modalMessage" class="modal-message"></p>
+      <input id="modalInput" class="input" type="text" style="display:none">
+      <div class="modal-btns">
+        <button id="modalCancel" class="btn btn-ghost btn-sm">Cancelar</button>
+        <button id="modalConfirm" class="btn btn-accent btn-sm">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
