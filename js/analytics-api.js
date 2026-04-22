@@ -47,7 +47,9 @@ const AnalyticsAPI = (() => {
 
   function signIn()  {
     if (!tokenClient) { if (onErrorCb) onErrorCb('Client ID não configurado ou Google ainda carregando.'); return; }
-    tokenClient.requestAccessToken({ prompt: '' });
+    // 'select_account' força o Google a mostrar o seletor de contas/canais
+    // toda vez — essencial para quem tem brand accounts (múltiplos canais).
+    tokenClient.requestAccessToken({ prompt: 'select_account' });
   }
 
   function signOut() {

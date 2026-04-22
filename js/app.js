@@ -763,8 +763,15 @@
       $('signInBtn').textContent    = 'Reconectar';
       $('signOutBtn').style.display = 'inline-flex';
       $('authStatus').innerHTML     = `
-        <img src="${esc(channel.thumbnail)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-right:6px" onerror="this.style.display='none'">
-        <span class="auth-ok">Conectado como <strong>${esc(channel.name)}</strong></span>`;
+        <img src="${esc(channel.thumbnail)}" style="width:32px;height:32px;border-radius:50%;vertical-align:middle;margin-right:8px" onerror="this.style.display='none'">
+        <span class="auth-ok">
+          Conectado como <strong>${esc(channel.name)}</strong>
+          <span style="color:var(--muted2);font-size:12px;margin-left:6px">
+            · ${fmtNum(channel.subscribers)} inscritos
+            · ID <code style="background:var(--bg3);padding:1px 5px;border-radius:3px">${esc(channel.id)}</code>
+            · <a href="https://www.youtube.com/channel/${esc(channel.id)}" target="_blank" style="color:#2563eb;text-decoration:none">abrir no YouTube ↗</a>
+          </span>
+        </span>`;
       $('reportConfigPanel').style.display = 'block';
     } else {
       $('signInBtn').textContent    = 'Entrar com Google';
