@@ -357,7 +357,8 @@
   }
 
   function getSelectedFields() {
-    return [...document.querySelectorAll('.fi:checked')].map(cb => cb.dataset.field);
+    // Scope to the Open tab's field list so we don't pick up the Private tab's checkboxes
+    return [...document.querySelectorAll('#fieldsList .fi:checked')].map(cb => cb.dataset.field);
   }
 
   async function fetchData() {
@@ -706,16 +707,16 @@
       });
     });
 
-    // Show/hide traffic video options based on report type
-    document.querySelectorAll('input[name="reportType"]').forEach(r => {
-      r.addEventListener('change', () => {
-        $('trafficVideoOptions').style.display =
-          document.querySelector('input[name="reportType"]:checked').value === 'trafficSources'
-            ? 'block' : 'none';
-      });
+    // Recipes: pre-select metric + dimension combos
+    document.querySelectorAll('.recipe-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyRecipe(btn.dataset.recipe));
     });
 
+    // When analytics checkboxes change, refresh the "sort by" dropdown
+    document.querySelectorAll('.afi').forEach(cb => cb.addEventListener('change', refreshSortOptions));
+
     $('runReportBtn').addEventListener('click', runReport);
+    refreshSortOptions();
 
     $('analyticsCsvBtn').addEventListener('click',  () => {
       if (analyticsTableInstance) analyticsTableInstance.download('csv',  `analytics-${dateTag()}.csv`,  { bom: true });
@@ -782,15 +783,61 @@
     }
   }
 
+  /* ── Receitas prontas ─────────────────────────────────────── */
+  const RECIPES = {
+    geography:    { m: ['views','estimatedMinutesWatched','subscribersGained','subscribersLost'], d: ['country'] },
+    demographics: { m: ['viewerPercentage'], d: ['ageGroup','gender'] },
+    devices:      { m: ['views','estimatedMinutesWatched'], d: ['deviceType'] },
+    trafficVideo: { m: ['views','estimatedMinutesWatched'], d: ['video','insightTrafficSourceType'] },
+    trafficTotal: { m: ['views','estimatedMinutesWatched'], d: ['insightTrafficSourceType'] },
+    byDay:        { m: ['views','estimatedMinutesWatched','subscribersGained'], d: ['day'] },
+    byMonth:      { m: ['views','estimatedMinutesWatched','subscribersGained'], d: ['month'] },
+    topVideos:    { m: ['views','estimatedMinutesWatched','likes','comments'], d: ['video'] },
+    clear:        { m: [], d: [] },
+  };
+
+  function applyRecipe(name) {
+    const r = RECIPES[name]; if (!r) return;
+    document.querySelectorAll('.afi').forEach(cb => { cb.checked = r.m.includes(cb.dataset.key); });
+    document.querySelectorAll('.adi').forEach(cb => { cb.checked = r.d.includes(cb.dataset.key); });
+    // Sync masters
+    document.querySelectorAll('.fg-master[data-group="ana-metrics"], .fg-master[data-group="ana-dims"]').forEach(syncMaster);
+    refreshSortOptions();
+  }
+
+  function getSelectedAnalytics() {
+    const metrics    = [...document.querySelectorAll('.afi:checked')].map(cb => cb.dataset.key);
+    const dimensions = [...document.querySelectorAll('.adi:checked')].map(cb => cb.dataset.key);
+    return { metrics, dimensions };
+  }
+
+  function refreshSortOptions() {
+    const sel = $('analyticsSortBy'); if (!sel) return;
+    const { metrics } = getSelectedAnalytics();
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">(primeira métrica, decrescente)</option>' +
+      metrics.map(m => `<option value="${m}">${AnalyticsAPI.METRIC_LABELS[m] || m}</option>`).join('');
+    if (metrics.includes(prev)) sel.value = prev;
+  }
+
   async function runReport() {
     if (!AnalyticsAPI.isSignedIn()) { toast('Faça login primeiro.', 'error'); return; }
 
-    const type      = document.querySelector('input[name="reportType"]:checked')?.value;
     const startDate = $('analyticsDateFrom').value;
     const endDate   = $('analyticsDateTo').value;
-
     if (!startDate || !endDate) { toast('Selecione o período.', 'error'); return; }
     if (new Date(startDate) > new Date(endDate)) { toast('Data inicial maior que a final.', 'error'); return; }
+
+    const { metrics, dimensions } = getSelectedAnalytics();
+    if (!metrics.length)    { toast('Selecione ao menos uma métrica.',  'error'); return; }
+    if (!dimensions.length) { toast('Selecione ao menos uma dimensão.', 'error'); return; }
+
+    // Build sort parameter
+    const sortBy  = $('analyticsSortBy').value || metrics[0];
+    const sortDir = $('analyticsSortDir').value === 'asc' ? '' : '-';
+    const sort    = `${sortDir}${sortBy}`;
+
+    const maxResults = Math.max(1, parseInt($('analyticsMaxResults').value) || 200);
 
     const runBtn = $('runReportBtn');
     runBtn.disabled = true;
@@ -798,14 +845,10 @@
     setAnaProgress(0, 'Iniciando…');
 
     try {
-      const onProgress = (msg, frac) => setAnaProgress(frac, msg);
-      let rows;
-
-      if      (type === 'trafficSources') rows = await AnalyticsAPI.getTrafficSources({ startDate, endDate, byVideo: true,  onProgress });
-      else if (type === 'trafficTotal')   rows = await AnalyticsAPI.getTrafficSources({ startDate, endDate, byVideo: false, onProgress });
-      else if (type === 'geography')      rows = await AnalyticsAPI.getGeography(     { startDate, endDate, onProgress });
-      else if (type === 'demographics')   rows = await AnalyticsAPI.getDemographics(  { startDate, endDate, onProgress });
-      else if (type === 'devices')        rows = await AnalyticsAPI.getDevices(       { startDate, endDate, onProgress });
+      const rows = await AnalyticsAPI.runCustomReport({
+        startDate, endDate, metrics, dimensions, sort, maxResults,
+        onProgress: (msg, frac) => setAnaProgress(frac, msg)
+      });
 
       if (!rows?.length) { toast('Nenhum dado encontrado para o período.', 'info'); return; }
 
@@ -813,7 +856,11 @@
       toast(`Relatório gerado: ${fmtNum(rows.length)} linhas.`, 'success');
 
     } catch (err) {
-      toast('Erro: ' + err.message, 'error', 7000);
+      // Many errors from the Analytics API are about invalid metric+dimension combos
+      const hint = /metric|dimension|combination|not supported/i.test(err.message)
+        ? ' — verifique se as métricas e dimensões escolhidas são compatíveis (ex: "% de Espectadores" só vai com Faixa etária/Gênero).'
+        : '';
+      toast('Erro: ' + err.message + hint, 'error', 9000);
     } finally {
       runBtn.disabled = false;
       $('analyticsProgress').style.display = 'none';

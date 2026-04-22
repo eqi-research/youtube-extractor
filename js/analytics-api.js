@@ -161,6 +161,56 @@ const AnalyticsAPI = (() => {
     'TV': 'TV', 'GAME_CONSOLE': 'Console', 'UNKNOWN_PLATFORM': 'Desconhecido'
   };
 
+  const SUBSCRIBED_LABELS = { 'SUBSCRIBED': 'Inscrito', 'UNSUBSCRIBED': 'Não inscrito' };
+  const LIVE_LABELS       = { 'LIVE': 'Ao vivo', 'ON_DEMAND': 'Sob demanda' };
+
+  const METRIC_LABELS = {
+    views:                        'Views',
+    estimatedMinutesWatched:      'Minutos Assistidos',
+    averageViewDuration:          'Duração Média (s)',
+    averageViewPercentage:        '% Médio Assistido',
+    subscribersGained:            'Inscritos Ganhos',
+    subscribersLost:              'Inscritos Perdidos',
+    likes:                        'Likes',
+    dislikes:                     'Dislikes',
+    shares:                       'Compartilhamentos',
+    comments:                     'Comentários',
+    annotationClickThroughRate:   'CTR de Anotações',
+    cardClickRate:                'CTR de Cards',
+    cardImpressions:              'Impressões de Cards',
+    viewerPercentage:             '% de Espectadores',
+  };
+
+  const DIMENSION_LABELS = {
+    video:                    'Vídeo',
+    day:                      'Dia',
+    month:                    'Mês',
+    country:                  'País',
+    ageGroup:                 'Faixa Etária',
+    gender:                   'Gênero',
+    deviceType:               'Dispositivo',
+    operatingSystem:          'Sistema Operacional',
+    insightTrafficSourceType: 'Fonte de Tráfego',
+    sharingService:           'Serviço Compartilhamento',
+    subscribedStatus:         'Status de Inscrição',
+    liveOrOnDemand:           'Ao vivo / Sob demanda',
+  };
+
+  // Given a dimension key and raw value, return a human-readable label (pt-BR).
+  function translateDimValue(dim, val) {
+    if (val == null) return val;
+    switch (dim) {
+      case 'country':                  return COUNTRY_NAMES[val]    || val;
+      case 'ageGroup':                 return AGE_LABELS[val]       || val;
+      case 'gender':                   return GENDER_LABELS[val]    || val;
+      case 'deviceType':               return DEVICE_LABELS[val]    || val;
+      case 'insightTrafficSourceType': return TRAFFIC_LABELS[val]   || val;
+      case 'subscribedStatus':         return SUBSCRIBED_LABELS[val]|| val;
+      case 'liveOrOnDemand':           return LIVE_LABELS[val]      || val;
+      default:                         return val;
+    }
+  }
+
   const COUNTRY_NAMES = {
     'BR':'Brasil','US':'EUA','MX':'México','AR':'Argentina','CO':'Colômbia','CL':'Chile',
     'PE':'Peru','VE':'Venezuela','PT':'Portugal','ES':'Espanha','FR':'França','DE':'Alemanha',
@@ -267,7 +317,62 @@ const AnalyticsAPI = (() => {
     }));
   }
 
+  /* ── Custom report (à la carte metrics + dimensions) ───────── */
+  async function runCustomReport({ startDate, endDate, metrics, dimensions, sort, maxResults, onProgress }) {
+    if (!metrics?.length)    throw new Error('Selecione ao menos uma métrica.');
+    if (!dimensions?.length) throw new Error('Selecione ao menos uma dimensão.');
+
+    if (onProgress) onProgress('Consultando YouTube Analytics…', 0.3);
+
+    const params = {
+      ids:        'channel==MINE',
+      startDate,
+      endDate,
+      metrics:    metrics.join(','),
+      dimensions: dimensions.join(','),
+      maxResults: maxResults || 200,
+    };
+    if (sort) params.sort = sort;
+
+    const data = await analyticsGet(params);
+    let rows   = toRows(data);
+    if (!rows.length) return [];
+
+    // If 'video' is a dimension, enrich with titles
+    const hasVideo = dimensions.includes('video');
+    if (hasVideo) {
+      if (onProgress) onProgress('Buscando títulos dos vídeos…', 0.7);
+      rows = await enrichVideoTitles(rows, 'video');
+    }
+
+    if (onProgress) onProgress('Concluído', 1);
+
+    // Build output rows: dimensions first (translated), then metrics (numeric)
+    return rows.map(r => {
+      const out = {};
+      for (const dim of dimensions) {
+        const label = DIMENSION_LABELS[dim] || dim;
+        if (dim === 'video') {
+          out['Título']      = r._title || r.video;
+          out['ID do Vídeo'] = r.video;
+        } else {
+          out[label]                   = translateDimValue(dim, r[dim]);
+          // If translated, also keep the raw code for country (useful for joins)
+          if (dim === 'country') out['Código do País'] = r[dim];
+        }
+      }
+      for (const m of metrics) {
+        const label = METRIC_LABELS[m] || m;
+        const v     = Number(r[m]);
+        out[label]  = Number.isFinite(v) ? Number(v.toFixed(4)) : 0;
+      }
+      return out;
+    });
+  }
+
   return { initOAuth, signIn, signOut, isSignedIn, getMyChannel,
-           getTrafficSources, getGeography, getDemographics, getDevices };
+           getTrafficSources, getGeography, getDemographics, getDevices,
+           runCustomReport,
+           METRIC_LABELS, DIMENSION_LABELS };
 
 })();

@@ -280,54 +280,82 @@
 
         <div class="filters-grid">
 
-          <div class="filter-group">
-            <span class="filter-group-label">Tipo de relatório</span>
-            <div class="report-type-list">
-
-              <label class="field-row">
-                <input type="radio" name="reportType" value="trafficSources" checked>
-                <div><span>Fontes de tráfego por vídeo</span>
-                  <small>de onde vieram as views de cada vídeo</small></div>
-              </label>
-
-              <label class="field-row">
-                <input type="radio" name="reportType" value="trafficTotal">
-                <div><span>Fontes de tráfego — canal</span>
-                  <small>visão geral do canal no período</small></div>
-              </label>
-
-              <label class="field-row">
-                <input type="radio" name="reportType" value="geography">
-                <div><span>Audiência por país</span>
-                  <small>views, minutos assistidos e inscritos por país</small></div>
-              </label>
-
-              <label class="field-row">
-                <input type="radio" name="reportType" value="demographics">
-                <div><span>Faixa etária &amp; gênero</span>
-                  <small>% de espectadores por faixa etária e gênero</small></div>
-              </label>
-
-              <label class="field-row">
-                <input type="radio" name="reportType" value="devices">
-                <div><span>Tipo de dispositivo</span>
-                  <small>desktop, mobile, TV, tablet…</small></div>
-              </label>
-
+          <!-- Receitas prontas -->
+          <div class="filter-group" style="grid-column:1/-1">
+            <span class="filter-group-label">Receitas prontas (opcional)</span>
+            <div class="date-presets">
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="geography">Audiência por país</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="demographics">Faixa etária × Gênero</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="devices">Dispositivos</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="trafficVideo">Tráfego por vídeo</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="trafficTotal">Tráfego — canal</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="byDay">Performance por dia</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="byMonth">Performance por mês</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="topVideos">Top vídeos</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="clear">✕ Limpar</button>
             </div>
+            <p class="quota-hint" style="margin-top:6px">Cada receita pré-marca uma combinação válida nas listas abaixo. Você pode ajustar à vontade depois.</p>
+          </div>
 
-            <!-- Extra options for traffic per video -->
-            <div id="trafficVideoOptions" class="traffic-opts">
-              <label class="date-row" style="margin-top:10px">
-                <span>Máx. vídeos</span>
-                <input type="number" id="analyticsMaxVideos" class="input input-sm" value="50" min="1" max="200">
-              </label>
-              <p class="quota-hint" style="margin-top:6px">A API retorna até 200 linhas. Com ~10 fontes por vídeo, isso cobre ~20 vídeos top.</p>
+          <!-- Métricas -->
+          <div class="filter-group">
+            <span class="filter-group-label">Métricas (o que medir)</span>
+            <div class="fields-list">
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label"><input type="checkbox" class="fg-master" data-group="ana-metrics"><span>Selecionar todas</span></label>
+                  <button class="fg-toggle open" type="button" data-group="ana-metrics">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-ana-metrics">
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="views"                      checked> Views</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="estimatedMinutesWatched"   checked> Minutos Assistidos</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="averageViewDuration"             > Duração Média (s)</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="averageViewPercentage"           > % Médio Assistido</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="subscribersGained"               > Inscritos Ganhos</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="subscribersLost"                 > Inscritos Perdidos</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="likes"                           > Likes</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="dislikes"                        > Dislikes</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="shares"                          > Compartilhamentos</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="comments"                        > Comentários</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="annotationClickThroughRate"      > CTR de Anotações</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardClickRate"                   > CTR de Cards</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardImpressions"                 > Impressões de Cards</label>
+                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="viewerPercentage"                > % de Espectadores <small style="color:var(--muted2)">(só com Faixa etária / Gênero)</small></label>
+                </div>
+              </div>
             </div>
           </div>
 
+          <!-- Dimensões -->
           <div class="filter-group">
-            <span class="filter-group-label">Período</span>
+            <span class="filter-group-label">Dimensões (como agrupar)</span>
+            <div class="fields-list">
+              <div class="fg-block">
+                <div class="fg-head">
+                  <label class="fg-master-label"><input type="checkbox" class="fg-master" data-group="ana-dims"><span>Selecionar todas</span></label>
+                  <button class="fg-toggle open" type="button" data-group="ana-dims">▾</button>
+                </div>
+                <div class="fg-body" id="fg-body-ana-dims">
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="video"                    > Vídeo (título + ID)</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="day"                      > Dia</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="month"                    > Mês</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="country"                  > País</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="ageGroup"                 > Faixa etária</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="gender"                   > Gênero</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="deviceType"               > Dispositivo</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="operatingSystem"          > Sistema operacional</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="insightTrafficSourceType" > Fonte de tráfego</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="sharingService"           > Serviço de compartilhamento</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="subscribedStatus"         > Status de inscrição</label>
+                  <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="liveOrOnDemand"           > Ao vivo / Sob demanda</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Período + opções -->
+          <div class="filter-group" style="grid-column:1/-1">
+            <span class="filter-group-label">Período &amp; opções</span>
             <div class="date-presets">
               <button class="btn btn-sm btn-ghost preset-btn" data-days="7">7 dias</button>
               <button class="btn btn-sm btn-ghost preset-btn" data-days="28">28 dias</button>
@@ -337,6 +365,18 @@
             <div class="date-filters" style="margin-top:10px">
               <label class="date-row"><span>De</span><input type="date" id="analyticsDateFrom" class="input input-sm"></label>
               <label class="date-row"><span>Até</span><input type="date" id="analyticsDateTo" class="input input-sm"></label>
+              <label class="date-row"><span>Ordenar por</span>
+                <select id="analyticsSortBy" class="input input-sm">
+                  <option value="">(primeira métrica, decrescente)</option>
+                </select>
+              </label>
+              <label class="date-row"><span>Direção</span>
+                <select id="analyticsSortDir" class="input input-sm">
+                  <option value="desc">Decrescente</option>
+                  <option value="asc">Crescente</option>
+                </select>
+              </label>
+              <label class="date-row"><span>Máx. linhas</span><input type="number" id="analyticsMaxResults" class="input input-sm" value="200" min="1" max="500"></label>
             </div>
           </div>
 
