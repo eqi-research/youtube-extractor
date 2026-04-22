@@ -661,8 +661,205 @@
     });
   }
 
+  /* ─────────────────────────────────────────────────────────────
+     TABS
+  ───────────────────────────────────────────────────────────────*/
+  function initTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(b  => b.classList.toggle('active', b.dataset.tab === tab));
+        document.querySelectorAll('.tab-pane').forEach(p => p.style.display = p.id === `tab-${tab}` ? '' : 'none');
+        $('apikeyArea').style.display = tab === 'open' ? 'flex' : 'none';
+      });
+    });
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     PRIVATE TAB
+  ───────────────────────────────────────────────────────────────*/
+  let analyticsTableInstance = null;
+
+  function initPrivateTab() {
+    const saved = Storage.loadClientId();
+    if (saved) { $('oauthClientId').value = saved; tryInitOAuth(saved); }
+
+    $('saveClientId').addEventListener('click', () => {
+      const id = $('oauthClientId').value.trim();
+      if (!id) { toast('Cole o Client ID primeiro.', 'error'); return; }
+      Storage.saveClientId(id);
+      toast('Client ID salvo!', 'success');
+      tryInitOAuth(id);
+    });
+
+    $('signInBtn').addEventListener('click',  () => AnalyticsAPI.signIn());
+    $('signOutBtn').addEventListener('click', () => { AnalyticsAPI.signOut(); setAuthStatus(null); });
+
+    // Date presets
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const days = parseInt(btn.dataset.days);
+        const to   = new Date();
+        const from = new Date(to.getTime() - days * 86400000);
+        $('analyticsDateTo').value   = to.toISOString().slice(0, 10);
+        $('analyticsDateFrom').value = from.toISOString().slice(0, 10);
+      });
+    });
+
+    // Show/hide traffic video options based on report type
+    document.querySelectorAll('input[name="reportType"]').forEach(r => {
+      r.addEventListener('change', () => {
+        $('trafficVideoOptions').style.display =
+          document.querySelector('input[name="reportType"]:checked').value === 'trafficSources'
+            ? 'block' : 'none';
+      });
+    });
+
+    $('runReportBtn').addEventListener('click', runReport);
+
+    $('analyticsCsvBtn').addEventListener('click',  () => {
+      if (analyticsTableInstance) analyticsTableInstance.download('csv',  `analytics-${dateTag()}.csv`,  { bom: true });
+    });
+    $('analyticsXlsxBtn').addEventListener('click', () => {
+      if (analyticsTableInstance) analyticsTableInstance.download('xlsx', `analytics-${dateTag()}.xlsx`, { sheetName: 'Analytics' });
+    });
+
+    // Show all rows toggle
+    let anaShowingAll = false;
+    $('analyticsShowAllBtn').addEventListener('click', () => {
+      if (!analyticsTableInstance) return;
+      anaShowingAll = !anaShowingAll;
+      if (anaShowingAll) {
+        analyticsTableInstance.setMaxHeight(false);
+        analyticsTableInstance.setPageSize(analyticsTableInstance.getData().length || 9999);
+        $('analyticsShowAllBtn').textContent = 'Paginar';
+        $('analyticsShowAllBtn').classList.replace('btn-ghost', 'btn-accent');
+      } else {
+        analyticsTableInstance.setPageSize(50);
+        analyticsTableInstance.setMaxHeight('520px');
+        $('analyticsShowAllBtn').textContent = 'Mostrar todas as linhas';
+        $('analyticsShowAllBtn').classList.replace('btn-accent', 'btn-ghost');
+      }
+    });
+
+    // Default: last 28 days
+    const today = new Date();
+    $('analyticsDateTo').value   = today.toISOString().slice(0, 10);
+    $('analyticsDateFrom').value = new Date(today.getTime() - 28 * 86400000).toISOString().slice(0, 10);
+  }
+
+  function tryInitOAuth(clientId) {
+    AnalyticsAPI.initOAuth(clientId,
+      ch  => setAuthStatus(ch),
+      err => {
+        $('authStatus').innerHTML = `<span class="auth-err">&#10005; ${esc(err)}</span>`;
+        toast('Erro de autenticação: ' + err, 'error', 6000);
+      }
+    );
+  }
+
+  function setAuthStatus(channel) {
+    if (channel) {
+      $('signInBtn').textContent    = 'Reconectar';
+      $('signOutBtn').style.display = 'inline-flex';
+      $('authStatus').innerHTML     = `
+        <img src="${esc(channel.thumbnail)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-right:6px" onerror="this.style.display='none'">
+        <span class="auth-ok">Conectado como <strong>${esc(channel.name)}</strong></span>`;
+      $('reportConfigPanel').style.display = 'block';
+    } else {
+      $('signInBtn').textContent    = 'Entrar com Google';
+      $('signOutBtn').style.display = 'none';
+      $('authStatus').innerHTML     = '';
+      $('reportConfigPanel').style.display   = 'none';
+      $('analyticsTablePanel').style.display = 'none';
+    }
+  }
+
+  async function runReport() {
+    if (!AnalyticsAPI.isSignedIn()) { toast('Faça login primeiro.', 'error'); return; }
+
+    const type      = document.querySelector('input[name="reportType"]:checked')?.value;
+    const startDate = $('analyticsDateFrom').value;
+    const endDate   = $('analyticsDateTo').value;
+
+    if (!startDate || !endDate) { toast('Selecione o período.', 'error'); return; }
+    if (new Date(startDate) > new Date(endDate)) { toast('Data inicial maior que a final.', 'error'); return; }
+
+    const runBtn = $('runReportBtn');
+    runBtn.disabled = true;
+    $('analyticsProgress').style.display = 'flex';
+    setAnaProgress(0, 'Iniciando…');
+
+    try {
+      const onProgress = (msg, frac) => setAnaProgress(frac, msg);
+      let rows;
+
+      if      (type === 'trafficSources') rows = await AnalyticsAPI.getTrafficSources({ startDate, endDate, byVideo: true,  onProgress });
+      else if (type === 'trafficTotal')   rows = await AnalyticsAPI.getTrafficSources({ startDate, endDate, byVideo: false, onProgress });
+      else if (type === 'geography')      rows = await AnalyticsAPI.getGeography(     { startDate, endDate, onProgress });
+      else if (type === 'demographics')   rows = await AnalyticsAPI.getDemographics(  { startDate, endDate, onProgress });
+      else if (type === 'devices')        rows = await AnalyticsAPI.getDevices(       { startDate, endDate, onProgress });
+
+      if (!rows?.length) { toast('Nenhum dado encontrado para o período.', 'info'); return; }
+
+      renderAnalyticsTable(rows);
+      toast(`Relatório gerado: ${fmtNum(rows.length)} linhas.`, 'success');
+
+    } catch (err) {
+      toast('Erro: ' + err.message, 'error', 7000);
+    } finally {
+      runBtn.disabled = false;
+      $('analyticsProgress').style.display = 'none';
+    }
+  }
+
+  function setAnaProgress(frac, text) {
+    $('analyticsProgressFill').style.width = Math.round(Math.min(frac, 1) * 100) + '%';
+    $('analyticsProgressText').textContent = text;
+  }
+
+  function renderAnalyticsTable(rows) {
+    const firstRow = rows[0];
+    const columns  = Object.keys(firstRow).map(key => {
+      const isNum = typeof firstRow[key] === 'number';
+      return {
+        title: key, field: key,
+        headerFilter: 'input',
+        sorter:    isNum ? 'number' : 'string',
+        hozAlign:  isNum ? 'right'  : 'left',
+        formatter: isNum ? cell => (cell.getValue() ?? 0).toLocaleString('pt-BR') : undefined,
+        width:     key === 'Título' ? 300 : key === 'País' ? 160 : isNum ? 140 : undefined,
+        minWidth:  80
+      };
+    });
+
+    $('analyticsTablePanel').style.display = 'block';
+    $('analyticsTableStats').textContent   = `${fmtNum(rows.length)} linha${rows.length !== 1 ? 's' : ''}`;
+    $('analyticsShowAllBtn').textContent   = 'Mostrar todas as linhas';
+    $('analyticsShowAllBtn').classList.remove('btn-accent');
+    $('analyticsShowAllBtn').classList.add('btn-ghost');
+
+    if (analyticsTableInstance) {
+      analyticsTableInstance.setColumns(columns);
+      analyticsTableInstance.setData(rows);
+    } else {
+      analyticsTableInstance = new Tabulator('#analyticsTable', {
+        data: rows, columns,
+        layout: 'fitDataFill',
+        pagination: 'local', paginationSize: 50,
+        paginationSizeSelector: [25, 50, 100, 250],
+        movableColumns: true, height: '520px', placeholder: 'Nenhum dado'
+      });
+    }
+    setTimeout(() => $('analyticsTablePanel').scrollIntoView({ behavior: 'smooth' }), 200);
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     INIT
+  ───────────────────────────────────────────────────────────────*/
   function init() {
     initApiKey();
+    initTabs();
     initSidebarToggle();
     initFieldToggles();
     initListActions();
@@ -670,6 +867,7 @@
     initFetch();
     initExport();
     initShowAllRows();
+    initPrivateTab();
     renderLists();
 
     const lists = Storage.loadLists();

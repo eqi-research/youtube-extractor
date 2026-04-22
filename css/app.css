@@ -62,6 +62,96 @@ html, body {
   margin-left: auto;
 }
 
+/* ─── Tab nav ────────────────────────────────────────────────── */
+.tab-nav {
+  display: flex;
+  gap: 2px;
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 3px;
+  margin: 0 auto;
+}
+
+.tab-btn {
+  padding: 5px 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--trans), color var(--trans), box-shadow var(--trans);
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.tab-btn:hover:not(.active) { color: var(--text); }
+.tab-btn.active {
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+
+/* ─── Tab panes ──────────────────────────────────────────────── */
+#tab-open { height: calc(100vh - 56px); overflow: hidden; }
+
+/* ─── Private tab layout ─────────────────────────────────────── */
+.private-layout {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+}
+
+/* Auth section */
+.auth-setup {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.auth-field { flex: 1; min-width: 260px; }
+.auth-actions { display: flex; gap: 8px; align-items: center; }
+.auth-status  { display: flex; align-items: center; font-size: 13px; }
+.auth-ok  { color: var(--green);  }
+.auth-err { color: var(--accent); }
+
+/* Setup guide (collapsible) */
+.setup-guide {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  font-size: 12px;
+}
+.setup-guide summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 500;
+  user-select: none;
+  list-style: none;
+}
+.setup-guide summary::-webkit-details-marker { display: none; }
+.setup-guide ol  { margin: 12px 0 0 16px; line-height: 2; color: var(--muted); }
+.setup-guide li  { margin-bottom: 4px; }
+.setup-guide code { background: var(--bg3); padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+.setup-guide a { color: var(--accent); }
+
+/* Report type list */
+.report-type-list { display: flex; flex-direction: column; gap: 5px; }
+.report-type-list .field-row input[type=radio] { accent-color: var(--accent); width: 14px; height: 14px; }
+
+/* Date presets */
+.date-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+
+/* Traffic options */
+.traffic-opts { margin-top: 4px; }
+
 .layout {
   display: flex;
   height: calc(100vh - 56px);

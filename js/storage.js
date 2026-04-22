@@ -4,12 +4,17 @@
 
 const Storage = (() => {
 
-  const KEY_API   = 'yte_apikey';
-  const KEY_LISTS = 'yte_lists';
+  const KEY_API       = 'yte_apikey';
+  const KEY_LISTS     = 'yte_lists';
+  const KEY_CLIENT_ID = 'yte_oauth_client_id';
 
   /* ── API Key ───────────────────────────────────────────────── */
   function saveApiKey(key) { localStorage.setItem(KEY_API, key); }
   function loadApiKey()    { return localStorage.getItem(KEY_API) || ''; }
+
+  /* ── OAuth Client ID ───────────────────────────────────────── */
+  function saveClientId(id) { localStorage.setItem(KEY_CLIENT_ID, id); }
+  function loadClientId()   { return localStorage.getItem(KEY_CLIENT_ID) || ''; }
 
   /* ── Lists ─────────────────────────────────────────────────── */
   function loadLists() {
@@ -83,6 +88,7 @@ const Storage = (() => {
 
   return {
     saveApiKey, loadApiKey,
+    saveClientId, loadClientId,
     loadLists, saveLists,
     createList, updateList, deleteList, duplicateList,
     addChannelToList, removeChannelFromList
