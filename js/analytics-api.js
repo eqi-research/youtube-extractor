@@ -318,11 +318,13 @@ const AnalyticsAPI = (() => {
   }
 
   /* ── Custom report (à la carte metrics + dimensions) ───────── */
-  async function runCustomReport({ startDate, endDate, metrics, dimensions, sort, maxResults, onProgress }) {
+  // Returns { rows, rawRows } — `rows` is localized output; `rawRows` is the original
+  // analytics response enriched with _title so the comparison join can use stable keys.
+  async function runCustomReport({ startDate, endDate, metrics, dimensions, sort, maxResults, contentType, onProgress, _label = '' }) {
     if (!metrics?.length)    throw new Error('Selecione ao menos uma métrica.');
     if (!dimensions?.length) throw new Error('Selecione ao menos uma dimensão.');
 
-    if (onProgress) onProgress('Consultando YouTube Analytics…', 0.3);
+    if (onProgress) onProgress(`Consultando YouTube Analytics${_label ? ' — '+_label : ''}…`, 0.3);
 
     const params = {
       ids:        'channel==MINE',
@@ -332,23 +334,23 @@ const AnalyticsAPI = (() => {
       dimensions: dimensions.join(','),
       maxResults: maxResults || 200,
     };
-    if (sort) params.sort = sort;
+    if (sort)        params.sort    = sort;
+    if (contentType) params.filters = `creatorContentType==${contentType}`;
 
     const data = await analyticsGet(params);
-    let rows   = toRows(data);
-    if (!rows.length) return [];
+    let rawRows = toRows(data);
+    if (!rawRows.length) return { rows: [], rawRows: [] };
 
     // If 'video' is a dimension, enrich with titles
-    const hasVideo = dimensions.includes('video');
-    if (hasVideo) {
-      if (onProgress) onProgress('Buscando títulos dos vídeos…', 0.7);
-      rows = await enrichVideoTitles(rows, 'video');
+    if (dimensions.includes('video')) {
+      if (onProgress) onProgress(`Buscando títulos dos vídeos${_label ? ' — '+_label : ''}…`, 0.7);
+      rawRows = await enrichVideoTitles(rawRows, 'video');
     }
 
     if (onProgress) onProgress('Concluído', 1);
 
     // Build output rows: dimensions first (translated), then metrics (numeric)
-    return rows.map(r => {
+    const rows = rawRows.map(r => {
       const out = {};
       for (const dim of dimensions) {
         const label = DIMENSION_LABELS[dim] || dim;
@@ -356,8 +358,7 @@ const AnalyticsAPI = (() => {
           out['Título']      = r._title || r.video;
           out['ID do Vídeo'] = r.video;
         } else {
-          out[label]                   = translateDimValue(dim, r[dim]);
-          // If translated, also keep the raw code for country (useful for joins)
+          out[label] = translateDimValue(dim, r[dim]);
           if (dim === 'country') out['Código do País'] = r[dim];
         }
       }
@@ -368,11 +369,89 @@ const AnalyticsAPI = (() => {
       }
       return out;
     });
+
+    return { rows, rawRows };
+  }
+
+  /* ── Comparison report (current period vs same-length previous period) ─ */
+  async function runComparisonReport(opts) {
+    const { startDate, endDate, metrics, dimensions, onProgress } = opts;
+
+    // Calculate previous period of the same length, ending the day before startDate
+    const dayMs     = 86400000;
+    const startMs   = new Date(startDate + 'T00:00:00Z').getTime();
+    const endMs     = new Date(endDate   + 'T00:00:00Z').getTime();
+    const lengthMs  = endMs - startMs + dayMs;   // inclusive
+    const prevEnd   = new Date(startMs - dayMs);
+    const prevStart = new Date(prevEnd.getTime() - lengthMs + dayMs);
+    const fmt = d => d.toISOString().slice(0, 10);
+
+    // Build join key: raw dimension values (from rawRows), joined with |
+    const keyOf = raw => dimensions.map(d => raw[d] ?? '').join('|');
+
+    if (onProgress) onProgress('Consultando período atual…', 0.15);
+    const cur = await runCustomReport({ ...opts, _label: 'atual',   onProgress: (m,f) => onProgress && onProgress(m, 0.15 + f*0.35) });
+
+    if (onProgress) onProgress('Consultando período anterior…', 0.55);
+    const prev = await runCustomReport({
+      ...opts,
+      startDate: fmt(prevStart),
+      endDate:   fmt(prevEnd),
+      _label:    'anterior',
+      onProgress: (m, f) => onProgress && onProgress(m, 0.55 + f * 0.4),
+    });
+
+    // Index previous rows by join key
+    const prevByKey = {};
+    prev.rawRows.forEach((raw, i) => { prevByKey[keyOf(raw)] = prev.rows[i]; });
+
+    // Merge: for each current row, append "(ant.)" and "Δ%" for each metric
+    const merged = cur.rows.map((row, i) => {
+      const key     = keyOf(cur.rawRows[i]);
+      const prevRow = prevByKey[key];
+      const out     = { ...row };
+      for (const m of metrics) {
+        const label    = METRIC_LABELS[m] || m;
+        const curVal   = Number(row[label])        || 0;
+        const prevVal  = prevRow ? Number(prevRow[label]) || 0 : 0;
+        out[`${label} (ant.)`] = prevVal;
+        out[`${label} Δ%`]     = prevVal === 0
+          ? (curVal === 0 ? 0 : null)   // null will render as "—"
+          : Number((((curVal - prevVal) / prevVal) * 100).toFixed(2));
+      }
+      delete prevByKey[key]; // mark consumed
+      return out;
+    });
+
+    // Append rows that existed only in the previous period (brand new losses)
+    const orphanKeys = Object.keys(prevByKey);
+    for (const k of orphanKeys) {
+      const prevRow = prevByKey[k];
+      const out     = { ...prevRow };
+      for (const m of metrics) {
+        const label   = METRIC_LABELS[m] || m;
+        const prevVal = Number(prevRow[label]) || 0;
+        out[label]              = 0;          // current period has no data
+        out[`${label} (ant.)`]  = prevVal;
+        out[`${label} Δ%`]      = prevVal === 0 ? 0 : -100;
+      }
+      merged.push(out);
+    }
+
+    if (onProgress) onProgress('Concluído', 1);
+
+    return {
+      rows: merged,
+      meta: {
+        currentFrom:  startDate, currentTo: endDate,
+        previousFrom: fmt(prevStart), previousTo: fmt(prevEnd),
+      }
+    };
   }
 
   return { initOAuth, signIn, signOut, isSignedIn, getMyChannel,
            getTrafficSources, getGeography, getDemographics, getDevices,
-           runCustomReport,
+           runCustomReport, runComparisonReport,
            METRIC_LABELS, DIMENSION_LABELS };
 
 })();

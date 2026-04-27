@@ -365,6 +365,14 @@
             <div class="date-filters" style="margin-top:10px">
               <label class="date-row"><span>De</span><input type="date" id="analyticsDateFrom" class="input input-sm"></label>
               <label class="date-row"><span>Até</span><input type="date" id="analyticsDateTo" class="input input-sm"></label>
+              <label class="date-row"><span>Tipo de conteúdo</span>
+                <select id="analyticsContentType" class="input input-sm">
+                  <option value="">Todos</option>
+                  <option value="VIDEO_ON_DEMAND">Somente vídeos (longos)</option>
+                  <option value="SHORTS">Somente Shorts</option>
+                  <option value="LIVE_STREAM">Somente ao vivo</option>
+                </select>
+              </label>
               <label class="date-row"><span>Ordenar por</span>
                 <select id="analyticsSortBy" class="input input-sm">
                   <option value="">(primeira métrica, decrescente)</option>
@@ -377,6 +385,14 @@
                 </select>
               </label>
               <label class="date-row"><span>Máx. linhas</span><input type="number" id="analyticsMaxResults" class="input input-sm" value="200" min="1" max="500"></label>
+              <label class="date-row" style="align-items:center">
+                <span>Comparar com período anterior</span>
+                <input type="checkbox" id="analyticsCompare" style="width:auto;margin-left:8px;transform:scale(1.2)">
+              </label>
+              <p class="quota-hint" id="compareHint" style="margin-top:4px">
+                Quando ligado, adiciona colunas <em>"(ant.)"</em> e <em>"Δ%"</em> para cada métrica, comparando com o período imediatamente anterior de mesma duração.
+                Não funciona bem com as dimensões <em>Dia</em> ou <em>Mês</em> (as datas não coincidem entre períodos).
+              </p>
             </div>
           </div>
 

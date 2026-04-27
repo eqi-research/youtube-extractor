@@ -837,7 +837,15 @@
     const sortDir = $('analyticsSortDir').value === 'asc' ? '' : '-';
     const sort    = `${sortDir}${sortBy}`;
 
-    const maxResults = Math.max(1, parseInt($('analyticsMaxResults').value) || 200);
+    const maxResults  = Math.max(1, parseInt($('analyticsMaxResults').value) || 200);
+    const contentType = $('analyticsContentType').value || null;
+    const compare     = $('analyticsCompare').checked;
+
+    // Warn if comparing with day/month dimension (dates won't align)
+    if (compare && (dimensions.includes('day') || dimensions.includes('month'))) {
+      toast('Comparação não faz sentido com dimensão "Dia" ou "Mês" (as datas mudam entre períodos). Desmarque a comparação ou remova essa dimensão.', 'error', 8000);
+      return;
+    }
 
     const runBtn = $('runReportBtn');
     runBtn.disabled = true;
@@ -845,10 +853,22 @@
     setAnaProgress(0, 'Iniciando…');
 
     try {
-      const rows = await AnalyticsAPI.runCustomReport({
-        startDate, endDate, metrics, dimensions, sort, maxResults,
+      const reportOpts = {
+        startDate, endDate, metrics, dimensions, sort, maxResults, contentType,
         onProgress: (msg, frac) => setAnaProgress(frac, msg)
-      });
+      };
+
+      let rows;
+      if (compare) {
+        const res = await AnalyticsAPI.runComparisonReport(reportOpts);
+        rows = res.rows;
+        if (rows?.length) {
+          toast(`Comparando ${res.meta.currentFrom} → ${res.meta.currentTo} com ${res.meta.previousFrom} → ${res.meta.previousTo}.`, 'info', 6000);
+        }
+      } else {
+        const res = await AnalyticsAPI.runCustomReport(reportOpts);
+        rows = res.rows;
+      }
 
       if (!rows?.length) { toast('Nenhum dado encontrado para o período.', 'info'); return; }
 
@@ -873,16 +893,33 @@
   }
 
   function renderAnalyticsTable(rows) {
-    const firstRow = rows[0];
+    // Pick a row that has the most keys defined (in case orphan rows lack some fields)
+    const firstRow = rows.reduce((a, b) => Object.keys(b).length > Object.keys(a).length ? b : a, rows[0]);
     const columns  = Object.keys(firstRow).map(key => {
-      const isNum = typeof firstRow[key] === 'number';
+      const sample  = rows.find(r => r[key] != null)?.[key];
+      const isNum   = typeof sample === 'number';
+      const isDelta = / Δ%$/.test(key);
+
+      let formatter;
+      if (isDelta) {
+        formatter = cell => {
+          const v = cell.getValue();
+          if (v == null) return '<span style="color:var(--muted2)">—</span>';
+          const color = v > 0 ? '#16a34a' : v < 0 ? '#dc2626' : 'var(--muted2)';
+          const arrow = v > 0 ? '▲' : v < 0 ? '▼' : '•';
+          return `<span style="color:${color};font-weight:600">${arrow} ${v.toLocaleString('pt-BR')}%</span>`;
+        };
+      } else if (isNum) {
+        formatter = cell => (cell.getValue() ?? 0).toLocaleString('pt-BR');
+      }
+
       return {
         title: key, field: key,
         headerFilter: 'input',
-        sorter:    isNum ? 'number' : 'string',
-        hozAlign:  isNum ? 'right'  : 'left',
-        formatter: isNum ? cell => (cell.getValue() ?? 0).toLocaleString('pt-BR') : undefined,
-        width:     key === 'Título' ? 300 : key === 'País' ? 160 : isNum ? 140 : undefined,
+        sorter:    isNum || isDelta ? 'number' : 'string',
+        hozAlign:  isNum || isDelta ? 'right'  : 'left',
+        formatter,
+        width:     key === 'Título' ? 300 : key === 'País' ? 160 : isDelta ? 110 : isNum ? 140 : undefined,
         minWidth:  80
       };
     });
