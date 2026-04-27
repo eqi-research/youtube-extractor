@@ -98,9 +98,50 @@ const AnalyticsAPI = (() => {
       id:          item.id,
       name:        item.snippet.title,
       thumbnail:   item.snippet.thumbnails?.default?.url || '',
-      subscribers: Number(item.statistics?.subscriberCount) || 0
+      subscribers: Number(item.statistics?.subscriberCount) || 0,
+      videoCount:  Number(item.statistics?.videoCount)      || 0,
     };
     return channelCache;
+  }
+
+  /* ── Get uploads playlist id (cached on channelCache) ─────── */
+  async function getUploadsPlaylistId() {
+    if (channelCache?.uploads) return channelCache.uploads;
+    const data = await dataGet('channels', { part: 'contentDetails', mine: true });
+    const uploads = data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (channelCache) channelCache.uploads = uploads;
+    return uploads;
+  }
+
+  /* ── Count videos published in [startDate, endDate] ───────── */
+  // Walks the uploads playlist (newest → oldest) and stops once items get older
+  // than the period start.
+  async function getVideosPublishedInPeriod(startDate, endDate) {
+    const uploads = await getUploadsPlaylistId();
+    if (!uploads) return 0;
+
+    const start = new Date(startDate + 'T00:00:00Z').getTime();
+    const end   = new Date(endDate   + 'T23:59:59Z').getTime();
+
+    let count = 0;
+    let pageToken = '';
+    let stop = false;
+
+    while (!stop) {
+      const params = { part: 'contentDetails', playlistId: uploads, maxResults: 50 };
+      if (pageToken) params.pageToken = pageToken;
+      const data = await dataGet('playlistItems', params);
+
+      for (const it of (data.items || [])) {
+        const t = new Date(it.contentDetails?.videoPublishedAt || 0).getTime();
+        if (!t) continue;
+        if (t >= start && t <= end) count++;
+        if (t < start) stop = true;   // playlist is newest first → past the start
+      }
+      if (!data.nextPageToken) stop = true;
+      pageToken = data.nextPageToken;
+    }
+    return count;
   }
 
   /* ── Parse Analytics response to row objects ────────────────── */
@@ -179,6 +220,9 @@ const AnalyticsAPI = (() => {
     cardClickRate:                'CTR de Cards (%)',
     cardImpressions:              'Impressões de Cards',
     viewerPercentage:             '% de Espectadores',
+    // Synthetic (computed locally, not from Analytics API)
+    videosPublishedInPeriod:      'Vídeos Publicados no Período',
+    totalChannelVideos:           'Total de Vídeos do Canal (geral)',
   };
 
   const DIMENSION_LABELS = {
@@ -317,39 +361,69 @@ const AnalyticsAPI = (() => {
     }));
   }
 
+  /* ── Synthetic metrics (computed locally, not from Analytics API) ── */
+  const SYNTHETIC_METRICS = ['videosPublishedInPeriod', 'totalChannelVideos'];
+
   /* ── Custom report (à la carte metrics + dimensions) ───────── */
   // Returns { rows, rawRows } — `rows` is localized output; `rawRows` is the original
   // analytics response enriched with _title so the comparison join can use stable keys.
+  // If `dimensions` is empty, the API returns a single aggregate row (channel total).
   async function runCustomReport({ startDate, endDate, metrics, dimensions, sort, maxResults, contentType, onProgress, _label = '' }) {
-    if (!metrics?.length)    throw new Error('Selecione ao menos uma métrica.');
-    if (!dimensions?.length) throw new Error('Selecione ao menos uma dimensão.');
+    if (!metrics?.length) throw new Error('Selecione ao menos uma métrica.');
+    dimensions = dimensions || [];
 
-    if (onProgress) onProgress(`Consultando YouTube Analytics${_label ? ' — '+_label : ''}…`, 0.3);
+    // Separate real vs synthetic metrics
+    const apiMetrics       = metrics.filter(m => !SYNTHETIC_METRICS.includes(m));
+    const syntheticMetrics = metrics.filter(m =>  SYNTHETIC_METRICS.includes(m));
 
-    const params = {
-      ids:        'channel==MINE',
-      startDate,
-      endDate,
-      metrics:    metrics.join(','),
-      dimensions: dimensions.join(','),
-      maxResults: maxResults || 200,
-    };
-    if (sort)        params.sort    = sort;
-    if (contentType) params.filters = `creatorContentType==${contentType}`;
+    if (!apiMetrics.length && !dimensions.length && !syntheticMetrics.length) {
+      throw new Error('Selecione ao menos uma métrica.');
+    }
 
-    const data = await analyticsGet(params);
-    let rawRows = toRows(data);
+    if (onProgress) onProgress(`Consultando YouTube Analytics${_label ? ' — '+_label : ''}…`, 0.2);
+
+    let rawRows = [];
+    if (apiMetrics.length) {
+      const params = {
+        ids:        'channel==MINE',
+        startDate,
+        endDate,
+        metrics:    apiMetrics.join(','),
+        maxResults: maxResults || 200,
+      };
+      if (dimensions.length) params.dimensions = dimensions.join(',');
+      if (sort && apiMetrics.includes(sort.replace(/^-/, ''))) params.sort = sort;
+      if (contentType)       params.filters    = `creatorContentType==${contentType}`;
+
+      const data = await analyticsGet(params);
+      rawRows    = toRows(data);
+    } else if (!dimensions.length) {
+      // Only synthetic metrics requested in aggregate mode → single placeholder row
+      rawRows = [{}];
+    }
+
     if (!rawRows.length) return { rows: [], rawRows: [] };
 
     // If 'video' is a dimension, enrich with titles
-    if (dimensions.includes('video')) {
-      if (onProgress) onProgress(`Buscando títulos dos vídeos${_label ? ' — '+_label : ''}…`, 0.7);
+    if (dimensions.includes('video') && rawRows[0].video) {
+      if (onProgress) onProgress(`Buscando títulos dos vídeos${_label ? ' — '+_label : ''}…`, 0.55);
       rawRows = await enrichVideoTitles(rawRows, 'video');
+    }
+
+    // Compute synthetic metric values (once for the whole period)
+    const syntheticValues = {};
+    if (syntheticMetrics.includes('videosPublishedInPeriod')) {
+      if (onProgress) onProgress(`Contando vídeos publicados no período${_label ? ' — '+_label : ''}…`, 0.75);
+      syntheticValues.videosPublishedInPeriod = await getVideosPublishedInPeriod(startDate, endDate);
+    }
+    if (syntheticMetrics.includes('totalChannelVideos')) {
+      const ch = await getMyChannel();
+      syntheticValues.totalChannelVideos = ch.videoCount || 0;
     }
 
     if (onProgress) onProgress('Concluído', 1);
 
-    // Build output rows: dimensions first (translated), then metrics (numeric)
+    // Build output rows: dimensions first (translated), then metrics
     const rows = rawRows.map(r => {
       const out = {};
       for (const dim of dimensions) {
@@ -362,10 +436,19 @@ const AnalyticsAPI = (() => {
           if (dim === 'country') out['Código do País'] = r[dim];
         }
       }
+      // If no dimensions, label the single row as channel-wide total
+      if (!dimensions.length) out['Escopo'] = 'Canal (total)';
+
       for (const m of metrics) {
         const label = METRIC_LABELS[m] || m;
-        const v     = Number(r[m]);
-        out[label]  = Number.isFinite(v) ? Number(v.toFixed(4)) : 0;
+        let v;
+        if (SYNTHETIC_METRICS.includes(m)) {
+          v = syntheticValues[m];
+        } else {
+          v = Number(r[m]);
+          v = Number.isFinite(v) ? Number(v.toFixed(4)) : 0;
+        }
+        out[label] = v ?? 0;
       }
       return out;
     });

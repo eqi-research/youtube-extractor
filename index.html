@@ -301,6 +301,7 @@
           <div class="filter-group" style="grid-column:1/-1">
             <span class="filter-group-label">Receitas prontas (opcional)</span>
             <div class="date-presets">
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="totalChannel">Total do canal</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="geography">Audiência por país</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="demographics">Faixa etária × Gênero</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="devices">Dispositivos</button>
@@ -338,6 +339,8 @@
                   <label class="fi-label" title="% de cards clicados quando exibidos durante o vídeo"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardClickRate"                > CTR de Cards (%)</label>
                   <label class="fi-label" title="Quantas vezes os cards foram exibidos durante os vídeos"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardImpressions"              > Impressões de Cards</label>
                   <label class="fi-label" title="Em consultas com Faixa etária/Gênero, retorna a fatia % de cada grupo"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="viewerPercentage"             > % de Espectadores <small style="color:var(--muted2)">(só com Faixa etária / Gênero)</small></label>
+                  <label class="fi-label" title="Quantos vídeos foram publicados pelo canal dentro do intervalo de datas escolhido (calculado a partir da playlist de uploads)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="videosPublishedInPeriod"      > Vídeos Publicados no Período <small style="color:var(--muted2)">(sintético)</small></label>
+                  <label class="fi-label" title="Total de vídeos públicos do canal (todos os tempos, vem do channels.statistics)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="totalChannelVideos"           > Total de Vídeos do Canal <small style="color:var(--muted2)">(geral, sintético)</small></label>
                 </div>
               </div>
             </div>

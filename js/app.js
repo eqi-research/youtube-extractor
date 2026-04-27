@@ -800,6 +800,7 @@
 
   /* ── Receitas prontas ─────────────────────────────────────── */
   const RECIPES = {
+    totalChannel: { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','subscribersGained','subscribersLost','likes','comments','shares','videosPublishedInPeriod','totalChannelVideos'], d: [] },
     geography:    { m: ['views','estimatedMinutesWatched','subscribersGained','subscribersLost'], d: ['country'] },
     demographics: { m: ['viewerPercentage'], d: ['ageGroup','gender'] },
     devices:      { m: ['views','estimatedMinutesWatched'], d: ['deviceType'] },
@@ -892,8 +893,8 @@
 
   async function onSavePreset() {
     const state = getCurrentPresetState();
-    if (!state.metrics.length || !state.dimensions.length) {
-      toast('Selecione pelo menos uma métrica e uma dimensão antes de salvar o preset.', 'error');
+    if (!state.metrics.length) {
+      toast('Selecione pelo menos uma métrica antes de salvar o preset.', 'error');
       return;
     }
     const name = await showModal({ message: 'Nome do preset (ex: R_Follow_UP):', withInput: true, inputDefault: $('presetSelect').value || '' });
@@ -941,8 +942,11 @@
     if (new Date(startDate) > new Date(endDate)) { toast('Data inicial maior que a final.', 'error'); return; }
 
     const { metrics, dimensions } = getSelectedAnalytics();
-    if (!metrics.length)    { toast('Selecione ao menos uma métrica.',  'error'); return; }
-    if (!dimensions.length) { toast('Selecione ao menos uma dimensão.', 'error'); return; }
+    if (!metrics.length) { toast('Selecione ao menos uma métrica.', 'error'); return; }
+    // dimensions pode ser vazio → relatório agregado (Total do canal)
+    if (!dimensions.length) {
+      toast('Sem dimensão: gerando totais do canal no período.', 'info', 4000);
+    }
 
     // Build sort parameter
     const sortBy  = $('analyticsSortBy').value || metrics[0];
