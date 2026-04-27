@@ -696,16 +696,31 @@
     $('signInBtn').addEventListener('click',  () => AnalyticsAPI.signIn());
     $('signOutBtn').addEventListener('click', () => { AnalyticsAPI.signOut(); setAuthStatus(null); });
 
-    // Date presets
+    // Date presets (botões 7/28/90/365)
     document.querySelectorAll('.preset-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const days = parseInt(btn.dataset.days);
-        const to   = new Date();
-        const from = new Date(to.getTime() - days * 86400000);
-        $('analyticsDateTo').value   = to.toISOString().slice(0, 10);
-        $('analyticsDateFrom').value = from.toISOString().slice(0, 10);
+        applyRelativePeriod(days);
+        $('analyticsRelative').value = String(days);
       });
     });
+
+    // Período relativo (dropdown)
+    $('analyticsRelative').addEventListener('change', () => {
+      const v = $('analyticsRelative').value;
+      if (v) applyRelativePeriod(parseInt(v));
+    });
+
+    // Quando usuário edita as datas manualmente, limpa o "relativo"
+    ['analyticsDateFrom','analyticsDateTo'].forEach(id => {
+      $(id).addEventListener('input', () => { $('analyticsRelative').value = ''; });
+    });
+
+    // Presets do usuário
+    $('savePresetBtn').addEventListener('click',   onSavePreset);
+    $('loadPresetBtn').addEventListener('click',   onLoadPreset);
+    $('deletePresetBtn').addEventListener('click', onDeletePreset);
+    renderPresetSelect();
 
     // Recipes: pre-select metric + dimension combos
     document.querySelectorAll('.recipe-btn').forEach(btn => {
@@ -792,7 +807,7 @@
     trafficTotal: { m: ['views','estimatedMinutesWatched'], d: ['insightTrafficSourceType'] },
     byDay:        { m: ['views','estimatedMinutesWatched','subscribersGained'], d: ['day'] },
     byMonth:      { m: ['views','estimatedMinutesWatched','subscribersGained'], d: ['month'] },
-    topVideos:    { m: ['views','estimatedMinutesWatched','likes','comments'], d: ['video'] },
+    topVideos:    { m: ['views','impressions','impressionsClickThroughRate','estimatedMinutesWatched','likes','comments'], d: ['video'] },
     clear:        { m: [], d: [] },
   };
 
@@ -818,6 +833,103 @@
     sel.innerHTML = '<option value="">(primeira métrica, decrescente)</option>' +
       metrics.map(m => `<option value="${m}">${AnalyticsAPI.METRIC_LABELS[m] || m}</option>`).join('');
     if (metrics.includes(prev)) sel.value = prev;
+  }
+
+  /* ── Período relativo ─────────────────────────────────────── */
+  function applyRelativePeriod(days) {
+    const to   = new Date();
+    const from = new Date(to.getTime() - days * 86400000);
+    $('analyticsDateTo').value   = to.toISOString().slice(0, 10);
+    $('analyticsDateFrom').value = from.toISOString().slice(0, 10);
+  }
+
+  /* ── Presets ──────────────────────────────────────────────── */
+  function getCurrentPresetState() {
+    const { metrics, dimensions } = getSelectedAnalytics();
+    return {
+      metrics, dimensions,
+      contentType: $('analyticsContentType').value,
+      sortBy:      $('analyticsSortBy').value,
+      sortDir:     $('analyticsSortDir').value,
+      maxResults:  parseInt($('analyticsMaxResults').value) || 200,
+      compare:     $('analyticsCompare').checked,
+      relative:    $('analyticsRelative').value,
+      dateFrom:    $('analyticsDateFrom').value,
+      dateTo:      $('analyticsDateTo').value,
+    };
+  }
+
+  function applyPresetState(p) {
+    document.querySelectorAll('.afi').forEach(cb => { cb.checked = (p.metrics    || []).includes(cb.dataset.key); });
+    document.querySelectorAll('.adi').forEach(cb => { cb.checked = (p.dimensions || []).includes(cb.dataset.key); });
+    document.querySelectorAll('.fg-master[data-group="ana-metrics"], .fg-master[data-group="ana-dims"]').forEach(syncMaster);
+
+    $('analyticsContentType').value = p.contentType || '';
+    $('analyticsSortDir').value     = p.sortDir     || 'desc';
+    $('analyticsMaxResults').value  = p.maxResults  || 200;
+    $('analyticsCompare').checked   = !!p.compare;
+    $('analyticsRelative').value    = p.relative    || '';
+
+    refreshSortOptions();
+    if (p.sortBy) $('analyticsSortBy').value = p.sortBy;
+
+    if (p.relative) {
+      applyRelativePeriod(parseInt(p.relative));
+    } else {
+      if (p.dateFrom) $('analyticsDateFrom').value = p.dateFrom;
+      if (p.dateTo)   $('analyticsDateTo').value   = p.dateTo;
+    }
+  }
+
+  function renderPresetSelect() {
+    const sel = $('presetSelect'); if (!sel) return;
+    const presets = Storage.loadAnalyticsPresets();
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— escolha um preset salvo —</option>' +
+      presets.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${p.relative ? ` · últimos ${p.relative}d` : ''}</option>`).join('');
+    if (presets.find(p => p.name === cur)) sel.value = cur;
+  }
+
+  async function onSavePreset() {
+    const state = getCurrentPresetState();
+    if (!state.metrics.length || !state.dimensions.length) {
+      toast('Selecione pelo menos uma métrica e uma dimensão antes de salvar o preset.', 'error');
+      return;
+    }
+    const name = await showModal({ message: 'Nome do preset (ex: R_Follow_UP):', withInput: true, inputDefault: $('presetSelect').value || '' });
+    if (!name?.trim()) return;
+
+    // Confirmar sobrescrita
+    const existing = Storage.loadAnalyticsPresets().find(p => p.name === name.trim());
+    if (existing) {
+      const ok = await showModal({ message: `Já existe um preset chamado "${name.trim()}". Sobrescrever?`, confirmLabel: 'Sobrescrever', dangerConfirm: true });
+      if (!ok) return;
+    }
+
+    const preset = { name: name.trim(), createdAt: new Date().toISOString(), ...state };
+    Storage.saveAnalyticsPreset(preset);
+    renderPresetSelect();
+    $('presetSelect').value = preset.name;
+    toast(`Preset "${preset.name}" salvo.`, 'success');
+  }
+
+  function onLoadPreset() {
+    const name = $('presetSelect').value;
+    if (!name) { toast('Escolha um preset na lista primeiro.', 'error'); return; }
+    const preset = Storage.loadAnalyticsPresets().find(p => p.name === name);
+    if (!preset) return;
+    applyPresetState(preset);
+    toast(`Preset "${name}" carregado.`, 'success');
+  }
+
+  async function onDeletePreset() {
+    const name = $('presetSelect').value;
+    if (!name) { toast('Escolha um preset na lista primeiro.', 'error'); return; }
+    const ok = await showModal({ message: `Excluir preset "${name}"?`, confirmLabel: 'Excluir', dangerConfirm: true });
+    if (!ok) return;
+    Storage.deleteAnalyticsPreset(name);
+    renderPresetSelect();
+    toast(`Preset "${name}" excluído.`, 'info');
   }
 
   async function runReport() {

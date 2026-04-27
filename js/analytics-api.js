@@ -175,8 +175,10 @@ const AnalyticsAPI = (() => {
     dislikes:                     'Dislikes',
     shares:                       'Compartilhamentos',
     comments:                     'Comentários',
-    annotationClickThroughRate:   'CTR de Anotações',
-    cardClickRate:                'CTR de Cards',
+    impressions:                  'Impressões',
+    impressionsClickThroughRate:  'CTR de Impressões (%)',
+    uniqueViewers:                'Espectadores Únicos',
+    cardClickRate:                'CTR de Cards (%)',
     cardImpressions:              'Impressões de Cards',
     viewerPercentage:             '% de Espectadores',
   };

@@ -280,6 +280,23 @@
 
         <div class="filters-grid">
 
+          <!-- Presets do usuário -->
+          <div class="filter-group" style="grid-column:1/-1">
+            <span class="filter-group-label">Meus presets (salvos)</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+              <select id="presetSelect" class="input input-sm" style="flex:1;min-width:240px">
+                <option value="">— escolha um preset salvo —</option>
+              </select>
+              <button id="loadPresetBtn"   class="btn btn-sm btn-accent">Carregar</button>
+              <button id="savePresetBtn"   class="btn btn-sm btn-ghost">+ Salvar config. atual</button>
+              <button id="deletePresetBtn" class="btn btn-sm btn-danger">Excluir</button>
+            </div>
+            <p class="quota-hint" style="margin-top:6px">
+              Os presets guardam métricas, dimensões, tipo de conteúdo, ordenação e período.
+              Use <strong>"Período relativo"</strong> (ex: últimos 7 dias) se quer que o preset se atualize automaticamente toda vez que rodar.
+            </p>
+          </div>
+
           <!-- Receitas prontas -->
           <div class="filter-group" style="grid-column:1/-1">
             <span class="filter-group-label">Receitas prontas (opcional)</span>
@@ -317,10 +334,12 @@
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="dislikes"                        > Dislikes</label>
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="shares"                          > Compartilhamentos</label>
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="comments"                        > Comentários</label>
-                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="annotationClickThroughRate"      > CTR de Anotações</label>
-                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardClickRate"                   > CTR de Cards</label>
-                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardImpressions"                 > Impressões de Cards</label>
-                  <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="viewerPercentage"                > % de Espectadores <small style="color:var(--muted2)">(só com Faixa etária / Gênero)</small></label>
+                  <label class="fi-label" title="Quantas vezes a thumbnail do vídeo apareceu pra alguém no YouTube"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="impressions"                  checked> Impressões (alcance)</label>
+                  <label class="fi-label" title="Dos que viram a thumbnail, quantos clicaram (CTR do YouTube Studio)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="impressionsClickThroughRate"  > CTR de Impressões (%)</label>
+                  <label class="fi-label" title="Espectadores únicos no período. Só funciona com algumas dimensões (não combina com video, country, etc.)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="uniqueViewers"                > Espectadores Únicos <small style="color:var(--muted2)">(dimensões limitadas)</small></label>
+                  <label class="fi-label" title="% de cards clicados quando exibidos durante o vídeo"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardClickRate"                > CTR de Cards (%)</label>
+                  <label class="fi-label" title="Quantas vezes os cards foram exibidos durante os vídeos"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardImpressions"              > Impressões de Cards</label>
+                  <label class="fi-label" title="Em consultas com Faixa etária/Gênero, retorna a fatia % de cada grupo"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="viewerPercentage"             > % de Espectadores <small style="color:var(--muted2)">(só com Faixa etária / Gênero)</small></label>
                 </div>
               </div>
             </div>
@@ -363,6 +382,18 @@
               <button class="btn btn-sm btn-ghost preset-btn" data-days="365">1 ano</button>
             </div>
             <div class="date-filters" style="margin-top:10px">
+              <label class="date-row"><span>Período relativo</span>
+                <select id="analyticsRelative" class="input input-sm">
+                  <option value="">Datas fixas (abaixo)</option>
+                  <option value="7">Últimos 7 dias</option>
+                  <option value="14">Últimos 14 dias</option>
+                  <option value="28">Últimos 28 dias</option>
+                  <option value="30">Últimos 30 dias</option>
+                  <option value="90">Últimos 90 dias</option>
+                  <option value="180">Últimos 180 dias</option>
+                  <option value="365">Últimos 365 dias</option>
+                </select>
+              </label>
               <label class="date-row"><span>De</span><input type="date" id="analyticsDateFrom" class="input input-sm"></label>
               <label class="date-row"><span>Até</span><input type="date" id="analyticsDateTo" class="input input-sm"></label>
               <label class="date-row"><span>Tipo de conteúdo</span>

@@ -7,6 +7,7 @@ const Storage = (() => {
   const KEY_API       = 'yte_apikey';
   const KEY_LISTS     = 'yte_lists';
   const KEY_CLIENT_ID = 'yte_oauth_client_id';
+  const KEY_PRESETS   = 'yte_analytics_presets';
 
   /* ── API Key ───────────────────────────────────────────────── */
   function saveApiKey(key) { localStorage.setItem(KEY_API, key); }
@@ -86,11 +87,32 @@ const Storage = (() => {
     saveLists(lists);
   }
 
+  /* ── Analytics presets ─────────────────────────────────────── */
+  function loadAnalyticsPresets() {
+    try { return JSON.parse(localStorage.getItem(KEY_PRESETS)) || []; }
+    catch { return []; }
+  }
+  function saveAnalyticsPresets(arr) {
+    localStorage.setItem(KEY_PRESETS, JSON.stringify(arr));
+  }
+  function saveAnalyticsPreset(preset) {
+    const arr = loadAnalyticsPresets();
+    const idx = arr.findIndex(p => p.name === preset.name);
+    if (idx >= 0) arr[idx] = preset;
+    else           arr.push(preset);
+    saveAnalyticsPresets(arr);
+    return preset;
+  }
+  function deleteAnalyticsPreset(name) {
+    saveAnalyticsPresets(loadAnalyticsPresets().filter(p => p.name !== name));
+  }
+
   return {
     saveApiKey, loadApiKey,
     saveClientId, loadClientId,
     loadLists, saveLists,
     createList, updateList, deleteList, duplicateList,
-    addChannelToList, removeChannelFromList
+    addChannelToList, removeChannelFromList,
+    loadAnalyticsPresets, saveAnalyticsPreset, deleteAnalyticsPreset
   };
 })();
