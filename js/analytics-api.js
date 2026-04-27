@@ -205,6 +205,14 @@ const AnalyticsAPI = (() => {
   const SUBSCRIBED_LABELS = { 'SUBSCRIBED': 'Inscrito', 'UNSUBSCRIBED': 'Não inscrito' };
   const LIVE_LABELS       = { 'LIVE': 'Ao vivo', 'ON_DEMAND': 'Sob demanda' };
 
+  const CONTENT_TYPE_LABELS = {
+    'VIDEO_ON_DEMAND': 'Vídeo Longo',
+    'SHORTS':          'Short',
+    'LIVE_STREAM':     'Ao vivo',
+    'STORY':           'Story',
+    'UNSPECIFIED':     'Não especificado',
+  };
+
   const METRIC_LABELS = {
     views:                        'Views',
     estimatedMinutesWatched:      'Minutos Assistidos',
@@ -223,6 +231,7 @@ const AnalyticsAPI = (() => {
     // Synthetic (computed locally, not from Analytics API)
     videosPublishedInPeriod:      'Vídeos Publicados no Período',
     totalChannelVideos:           'Total de Vídeos do Canal (geral)',
+    engagements:                  'Engajamentos',
   };
 
   const DIMENSION_LABELS = {
@@ -238,6 +247,7 @@ const AnalyticsAPI = (() => {
     sharingService:           'Serviço Compartilhamento',
     subscribedStatus:         'Status de Inscrição',
     liveOrOnDemand:           'Ao vivo / Sob demanda',
+    creatorContentType:       'Tipo de Conteúdo',
   };
 
   // Given a dimension key and raw value, return a human-readable label (pt-BR).
@@ -251,6 +261,7 @@ const AnalyticsAPI = (() => {
       case 'insightTrafficSourceType': return TRAFFIC_LABELS[val]   || val;
       case 'subscribedStatus':         return SUBSCRIBED_LABELS[val]|| val;
       case 'liveOrOnDemand':           return LIVE_LABELS[val]      || val;
+      case 'creatorContentType':       return CONTENT_TYPE_LABELS[val] || val;
       default:                         return val;
     }
   }
@@ -362,7 +373,11 @@ const AnalyticsAPI = (() => {
   }
 
   /* ── Synthetic metrics (computed locally, not from Analytics API) ── */
-  const SYNTHETIC_METRICS = ['videosPublishedInPeriod', 'totalChannelVideos'];
+  // Per-period: same value for every row (channel-wide)
+  const PER_PERIOD_SYNTHETIC = ['videosPublishedInPeriod', 'totalChannelVideos'];
+  // Per-row: computed from real metrics in the same row
+  const PER_ROW_SYNTHETIC    = ['engagements'];
+  const SYNTHETIC_METRICS    = [...PER_PERIOD_SYNTHETIC, ...PER_ROW_SYNTHETIC];
 
   /* ── Custom report (à la carte metrics + dimensions) ───────── */
   // Returns { rows, rawRows } — `rows` is localized output; `rawRows` is the original
@@ -382,17 +397,24 @@ const AnalyticsAPI = (() => {
 
     if (onProgress) onProgress(`Consultando YouTube Analytics${_label ? ' — '+_label : ''}…`, 0.2);
 
+    // For 'engagements' synthetic, ensure likes/dislikes/comments are fetched
+    const apiMetricsToFetch = new Set(apiMetrics);
+    if (syntheticMetrics.includes('engagements')) {
+      ['likes', 'dislikes', 'comments'].forEach(m => apiMetricsToFetch.add(m));
+    }
+    const apiMetricsArray = [...apiMetricsToFetch];
+
     let rawRows = [];
-    if (apiMetrics.length) {
+    if (apiMetricsArray.length) {
       const params = {
         ids:        'channel==MINE',
         startDate,
         endDate,
-        metrics:    apiMetrics.join(','),
+        metrics:    apiMetricsArray.join(','),
         maxResults: maxResults || 200,
       };
       if (dimensions.length) params.dimensions = dimensions.join(',');
-      if (sort && apiMetrics.includes(sort.replace(/^-/, ''))) params.sort = sort;
+      if (sort && apiMetricsArray.includes(sort.replace(/^-/, ''))) params.sort = sort;
       if (contentType)       params.filters    = `creatorContentType==${contentType}`;
 
       const data = await analyticsGet(params);
@@ -442,7 +464,9 @@ const AnalyticsAPI = (() => {
       for (const m of metrics) {
         const label = METRIC_LABELS[m] || m;
         let v;
-        if (SYNTHETIC_METRICS.includes(m)) {
+        if (m === 'engagements') {
+          v = (Number(r.likes) || 0) + (Number(r.dislikes) || 0) + (Number(r.comments) || 0);
+        } else if (PER_PERIOD_SYNTHETIC.includes(m)) {
           v = syntheticValues[m];
         } else {
           v = Number(r[m]);

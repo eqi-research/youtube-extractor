@@ -680,6 +680,8 @@
      PRIVATE TAB
   ───────────────────────────────────────────────────────────────*/
   let analyticsTableInstance = null;
+  let lastReportData = null;          // { rows, metrics, dimensions, hasComparison }
+  let currentView    = (localStorage.getItem('yte_view_preference') || 'table'); // 'table' | 'panel'
 
   function initPrivateTab() {
     const saved = Storage.loadClientId();
@@ -721,6 +723,11 @@
     $('loadPresetBtn').addEventListener('click',   onLoadPreset);
     $('deletePresetBtn').addEventListener('click', onDeletePreset);
     renderPresetSelect();
+
+    // View toggle (Tabela / Painel)
+    $('viewTableBtn').addEventListener('click', () => applyView('table'));
+    $('viewPanelBtn').addEventListener('click', () => applyView('panel'));
+    applyView(currentView, /* skipRender */ true);  // initial UI state
 
     // Recipes: pre-select metric + dimension combos
     document.querySelectorAll('.recipe-btn').forEach(btn => {
@@ -800,7 +807,8 @@
 
   /* ── Receitas prontas ─────────────────────────────────────── */
   const RECIPES = {
-    totalChannel: { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','subscribersGained','subscribersLost','likes','comments','shares','videosPublishedInPeriod','totalChannelVideos'], d: [] },
+    totalChannel:       { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','subscribersGained','subscribersLost','likes','comments','shares','videosPublishedInPeriod','totalChannelVideos'], d: [] },
+    totalByContentType: { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','likes','comments','shares'], d: ['creatorContentType'] },
     geography:    { m: ['views','estimatedMinutesWatched','subscribersGained','subscribersLost'], d: ['country'] },
     demographics: { m: ['viewerPercentage'], d: ['ageGroup','gender'] },
     devices:      { m: ['views','estimatedMinutesWatched'], d: ['deviceType'] },
@@ -857,6 +865,7 @@
       relative:    $('analyticsRelative').value,
       dateFrom:    $('analyticsDateFrom').value,
       dateTo:      $('analyticsDateTo').value,
+      view:        currentView,
     };
   }
 
@@ -880,6 +889,8 @@
       if (p.dateFrom) $('analyticsDateFrom').value = p.dateFrom;
       if (p.dateTo)   $('analyticsDateTo').value   = p.dateTo;
     }
+
+    if (p.view) applyView(p.view, /* skipRender */ true);
   }
 
   function renderPresetSelect() {
@@ -988,7 +999,10 @@
 
       if (!rows?.length) { toast('Nenhum dado encontrado para o período.', 'info'); return; }
 
+      lastReportData = { rows, metrics, dimensions, hasComparison: compare };
       renderAnalyticsTable(rows);
+      renderAnalyticsPanel(rows, metrics, dimensions, compare);
+      applyView(currentView);
       toast(`Relatório gerado: ${fmtNum(rows.length)} linhas.`, 'success');
 
     } catch (err) {
@@ -1059,6 +1073,173 @@
       });
     }
     setTimeout(() => $('analyticsTablePanel').scrollIntoView({ behavior: 'smooth' }), 200);
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     PANEL VIEW (cards)
+  ───────────────────────────────────────────────────────────────*/
+
+  // Métricas que NÃO podem ser somadas (são médias / percentuais)
+  const NON_ADDITIVE_METRICS = new Set([
+    'averageViewDuration', 'averageViewPercentage',
+    'viewerPercentage',    'cardClickRate',
+  ]);
+
+  // Métricas sintéticas que sempre são "do canal" — nunca quebram por dimensão
+  const PER_PERIOD_SYNTHETIC = ['videosPublishedInPeriod', 'totalChannelVideos'];
+
+  function applyView(view, skipRender = false) {
+    currentView = view;
+    localStorage.setItem('yte_view_preference', view);
+    $('viewTableBtn')?.classList.toggle('active', view === 'table');
+    $('viewPanelBtn')?.classList.toggle('active', view === 'panel');
+    if ($('analyticsTable'))      $('analyticsTable').style.display      = view === 'table' ? '' : 'none';
+    if ($('analyticsPanel'))      $('analyticsPanel').style.display      = view === 'panel' ? 'grid' : 'none';
+    if ($('analyticsShowAllBtn')) $('analyticsShowAllBtn').style.display = view === 'table' ? '' : 'none';
+    if (!skipRender && view === 'panel' && lastReportData) {
+      renderAnalyticsPanel(lastReportData.rows, lastReportData.metrics, lastReportData.dimensions, lastReportData.hasComparison);
+    }
+  }
+
+  function renderAnalyticsPanel(rows, metrics, dimensions, hasComparison) {
+    const container = $('analyticsPanel');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!rows?.length || !metrics?.length) return;
+
+    for (const m of metrics) {
+      const label = AnalyticsAPI.METRIC_LABELS[m] || m;
+      const card  = document.createElement('div');
+      card.className = 'metric-card';
+
+      const isPerPeriodSynthetic = PER_PERIOD_SYNTHETIC.includes(m);
+      const showSingleValue = !dimensions.length || isPerPeriodSynthetic;
+
+      if (showSingleValue) {
+        card.innerHTML = renderSingleValueCard(rows[0] || {}, label, hasComparison);
+      } else {
+        card.innerHTML = renderBreakdownCard(rows, m, label, dimensions, hasComparison);
+      }
+      container.appendChild(card);
+    }
+  }
+
+  function renderSingleValueCard(row, label, hasComparison) {
+    const cur  = Number(row[label]) || 0;
+    const dPct = hasComparison ? row[`${label} Δ%`] : null;
+    const prev = hasComparison ? (Number(row[`${label} (ant.)`]) || 0) : null;
+
+    let html = `
+      <div class="metric-card-title">${esc(label)}</div>
+      <div class="metric-card-big">${formatNumber(cur)}</div>
+    `;
+    if (hasComparison) {
+      html += renderDeltaBlock(dPct, prev);
+    }
+    return html;
+  }
+
+  function renderBreakdownCard(rows, metricKey, label, dimensions, hasComparison) {
+    const isAvg     = NON_ADDITIVE_METRICS.has(metricKey);
+    const dimSuffix = 'por ' + dimensions.map(d => AnalyticsAPI.DIMENSION_LABELS[d] || d).join(' × ');
+    const MAX_ROWS  = 50;
+
+    // Sort rows by current metric value, descending, for the visualization
+    const sorted = [...rows].sort((a, b) => (Number(b[label]) || 0) - (Number(a[label]) || 0));
+    const slice   = sorted.slice(0, MAX_ROWS);
+    const omitted = sorted.length - slice.length;
+
+    const maxAbs = Math.max(1, ...slice.map(r => Math.abs(Number(r[label]) || 0)));
+
+    let html = `
+      <div class="metric-card-title">${esc(label)}</div>
+      <div class="metric-card-subtitle">${esc(dimSuffix)}</div>
+    `;
+
+    for (const r of slice) {
+      const dimLabel = rowDimensionLabel(r, dimensions);
+      const v        = Number(r[label]) || 0;
+      const dPct     = hasComparison ? r[`${label} Δ%`] : null;
+      const widthPct = (v / maxAbs) * 100;
+      html += `
+        <div class="metric-card-row">
+          <span class="metric-card-row-label" title="${esc(dimLabel)}">${esc(dimLabel)}</span>
+          <span class="metric-card-row-value">${formatNumber(v)}</span>
+          <span class="metric-card-row-delta">${formatDeltaInline(dPct)}</span>
+          <div class="metric-card-row-bar"><div style="width:${Math.max(0, widthPct)}%"></div></div>
+        </div>
+      `;
+    }
+
+    if (omitted > 0) {
+      html += `<div class="metric-card-omitted">+ ${omitted} outros (use a Tabela para ver todos)</div>`;
+    }
+
+    html += `<div class="metric-card-divider"></div>`;
+    if (isAvg) {
+      html += `<div class="metric-card-total"><span>Total</span><span title="Não somável (é uma média)" style="color:var(--muted2)">—</span></div>`;
+    } else {
+      const totalCur  = sorted.reduce((s, r) => s + (Number(r[label]) || 0), 0);
+      const totalPrev = hasComparison
+        ? sorted.reduce((s, r) => s + (Number(r[`${label} (ant.)`]) || 0), 0)
+        : null;
+      const totalDelta = (totalPrev != null && totalPrev > 0)
+        ? ((totalCur - totalPrev) / totalPrev) * 100
+        : (totalPrev === 0 && totalCur === 0 ? 0 : null);
+
+      html += `
+        <div class="metric-card-total">
+          <span>Soma</span>
+          <span>${formatNumber(totalCur)}</span>
+        </div>
+      `;
+      if (hasComparison) {
+        html += `<div style="text-align:right;margin-top:2px">${formatDeltaInline(totalDelta)}</div>`;
+        if (totalPrev != null) {
+          html += `<div class="metric-card-prev" style="text-align:right">vs ant. ${formatNumber(totalPrev)}</div>`;
+        }
+      }
+    }
+    return html;
+  }
+
+  function rowDimensionLabel(row, dimensions) {
+    const parts = [];
+    for (const d of dimensions) {
+      const lbl = AnalyticsAPI.DIMENSION_LABELS[d] || d;
+      if (d === 'video')  parts.push(row['Título'] || row['ID do Vídeo'] || '');
+      else                parts.push(row[lbl] ?? '');
+    }
+    return parts.filter(Boolean).join(' — ') || '(sem rótulo)';
+  }
+
+  function formatNumber(v) {
+    if (v == null || isNaN(v)) return '0';
+    const n = Number(v);
+    // Mantém duas casas decimais para valores fracionários abaixo de 100
+    if (!Number.isInteger(n) && Math.abs(n) < 1000) {
+      return n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+    }
+    return Math.round(n).toLocaleString('pt-BR');
+  }
+
+  function renderDeltaBlock(dPct, prevVal) {
+    if (dPct == null) {
+      return `<div class="metric-card-delta flat">— sem base anterior</div>`;
+    }
+    const cls = dPct > 0 ? 'up' : dPct < 0 ? 'down' : 'flat';
+    const arr = dPct > 0 ? '▲' : dPct < 0 ? '▼' : '•';
+    return `
+      <div class="metric-card-delta ${cls}">${arr} ${dPct.toLocaleString('pt-BR')}%</div>
+      <div class="metric-card-prev">vs ant. ${formatNumber(prevVal)}</div>
+    `;
+  }
+
+  function formatDeltaInline(dPct) {
+    if (dPct == null) return `<span style="color:var(--muted2)">—</span>`;
+    const color = dPct > 0 ? 'var(--green)' : dPct < 0 ? 'var(--accent)' : 'var(--muted2)';
+    const arr   = dPct > 0 ? '▲' : dPct < 0 ? '▼' : '•';
+    return `<span style="color:${color};font-weight:600">${arr} ${dPct.toLocaleString('pt-BR')}%</span>`;
   }
 
   /* ─────────────────────────────────────────────────────────────

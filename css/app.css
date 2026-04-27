@@ -675,3 +675,135 @@ html, body {
 ::-webkit-scrollbar-track { background: var(--bg2); }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted2); }
+
+/* ─── View toggle (Tabela / Painel) ──────────────────────────── */
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-right: 4px;
+}
+.view-btn {
+  background: transparent;
+  border: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: inherit;
+  transition: var(--trans);
+}
+.view-btn:hover { background: var(--bg3); color: var(--text); }
+.view-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ─── Metric cards (Painel view) ─────────────────────────────── */
+.metric-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  padding: 8px 0;
+}
+.metric-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  transition: var(--trans);
+}
+.metric-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+
+.metric-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-bottom: 2px;
+}
+.metric-card-subtitle {
+  font-size: 11px;
+  color: var(--muted2);
+  margin-bottom: 10px;
+}
+.metric-card-big {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+  margin: 8px 0 6px;
+  letter-spacing: -.5px;
+}
+.metric-card-delta {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.metric-card-delta.up   { color: var(--green); }
+.metric-card-delta.down { color: var(--accent); }
+.metric-card-delta.flat { color: var(--muted2); }
+.metric-card-prev {
+  font-size: 11px;
+  color: var(--muted2);
+  margin-top: 2px;
+}
+
+/* List rows inside a card (when there are dimensions) */
+.metric-card-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 6px 0 2px;
+  font-size: 13px;
+}
+.metric-card-row-label {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-card-row-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.metric-card-row-delta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.metric-card-row-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 2px 0 4px;
+}
+.metric-card-row-bar > div {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width .4s ease;
+}
+.metric-card-divider {
+  border-top: 1px dashed var(--border);
+  margin: 10px 0 8px;
+}
+.metric-card-total {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 13px;
+}
+.metric-card-omitted {
+  font-size: 11px;
+  color: var(--muted2);
+  text-align: right;
+  margin-top: 4px;
+  font-style: italic;
+}

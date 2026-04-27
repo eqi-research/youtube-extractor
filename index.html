@@ -302,6 +302,7 @@
             <span class="filter-group-label">Receitas prontas (opcional)</span>
             <div class="date-presets">
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="totalChannel">Total do canal</button>
+              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="totalByContentType">Total × Tipo (Short/Longo)</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="geography">Audiência por país</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="demographics">Faixa etária × Gênero</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="devices">Dispositivos</button>
@@ -335,6 +336,7 @@
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="dislikes"                        > Dislikes</label>
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="shares"                          > Compartilhamentos</label>
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="comments"                        > Comentários</label>
+                  <label class="fi-label" title="Soma de likes + dislikes + comentários (calculado localmente)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="engagements"                     > Engajamentos <small style="color:var(--muted2)">(likes + dislikes + comentários)</small></label>
                   <label class="fi-label" title="Espectadores únicos no período. Só funciona com algumas dimensões (não combina com video, country, etc.)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="uniqueViewers"                > Espectadores Únicos <small style="color:var(--muted2)">(dimensões limitadas)</small></label>
                   <label class="fi-label" title="% de cards clicados quando exibidos durante o vídeo"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardClickRate"                > CTR de Cards (%)</label>
                   <label class="fi-label" title="Quantas vezes os cards foram exibidos durante os vídeos"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardImpressions"              > Impressões de Cards</label>
@@ -368,6 +370,7 @@
                   <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="sharingService"           > Serviço de compartilhamento</label>
                   <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="subscribedStatus"         > Status de inscrição</label>
                   <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="liveOrOnDemand"           > Ao vivo / Sob demanda</label>
+                  <label class="fi-label" title="Divide os resultados em Vídeo Longo, Short, Ao vivo e Story — cada um vira uma linha"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="creatorContentType"       > Tipo de conteúdo (Short / Longo / Live)</label>
                 </div>
               </div>
             </div>
@@ -397,11 +400,11 @@
               </label>
               <label class="date-row"><span>De</span><input type="date" id="analyticsDateFrom" class="input input-sm"></label>
               <label class="date-row"><span>Até</span><input type="date" id="analyticsDateTo" class="input input-sm"></label>
-              <label class="date-row"><span>Tipo de conteúdo</span>
+<label class="date-row" title="Filtro nem sempre é aceito pela API (varia por canal). Para resultados garantidos, use a dimensão 'Tipo de conteúdo'."><span>Filtrar tipo (experimental)</span>
                 <select id="analyticsContentType" class="input input-sm">
-                  <option value="">Todos</option>
-                  <option value="VIDEO_ON_DEMAND">Somente vídeos (longos)</option>
+                  <option value="">Todos (recomendado)</option>
                   <option value="SHORTS">Somente Shorts</option>
+                  <option value="VIDEO_ON_DEMAND">Somente vídeos longos</option>
                   <option value="LIVE_STREAM">Somente ao vivo</option>
                 </select>
               </label>
@@ -439,17 +442,22 @@
         </div>
       </section>
 
-      <!-- Results table -->
+      <!-- Results table / panel -->
       <section class="panel" id="analyticsTablePanel" style="display:none">
         <div class="table-topbar">
           <span id="analyticsTableStats" class="text-muted"></span>
           <div class="table-actions">
+            <div class="view-toggle">
+              <button id="viewTableBtn" class="view-btn active" title="Mostrar como tabela">&#128202; Tabela</button>
+              <button id="viewPanelBtn" class="view-btn"        title="Mostrar como painel de cards">&#128203; Painel</button>
+            </div>
             <button id="analyticsShowAllBtn" class="btn btn-sm btn-ghost">Mostrar todas as linhas</button>
             <button id="analyticsCsvBtn"  class="btn btn-sm btn-ghost">Export CSV</button>
             <button id="analyticsXlsxBtn" class="btn btn-sm btn-accent">Export XLSX</button>
           </div>
         </div>
         <div id="analyticsTable"></div>
+        <div id="analyticsPanel" class="metric-cards-grid" style="display:none"></div>
       </section>
 
     </div>
