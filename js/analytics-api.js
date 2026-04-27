@@ -175,8 +175,6 @@ const AnalyticsAPI = (() => {
     dislikes:                     'Dislikes',
     shares:                       'Compartilhamentos',
     comments:                     'Comentários',
-    impressions:                  'Impressões',
-    impressionsClickThroughRate:  'CTR de Impressões (%)',
     uniqueViewers:                'Espectadores Únicos',
     cardClickRate:                'CTR de Cards (%)',
     cardImpressions:              'Impressões de Cards',

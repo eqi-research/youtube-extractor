@@ -807,7 +807,7 @@
     trafficTotal: { m: ['views','estimatedMinutesWatched'], d: ['insightTrafficSourceType'] },
     byDay:        { m: ['views','estimatedMinutesWatched','subscribersGained'], d: ['day'] },
     byMonth:      { m: ['views','estimatedMinutesWatched','subscribersGained'], d: ['month'] },
-    topVideos:    { m: ['views','impressions','impressionsClickThroughRate','estimatedMinutesWatched','likes','comments'], d: ['video'] },
+    topVideos:    { m: ['views','estimatedMinutesWatched','likes','comments','shares'], d: ['video'] },
     clear:        { m: [], d: [] },
   };
 
