@@ -807,8 +807,7 @@
 
   /* ── Receitas prontas ─────────────────────────────────────── */
   const RECIPES = {
-    totalChannel:       { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','subscribersGained','subscribersLost','likes','comments','shares','videosPublishedInPeriod','totalChannelVideos'], d: [] },
-    totalByContentType: { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','likes','comments','shares'], d: ['creatorContentType'] },
+    totalChannel:       { m: ['views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','subscribersGained','subscribersLost','likes','comments','shares','engagements','videosPublishedInPeriod','totalChannelVideos'], d: [] },
     geography:    { m: ['views','estimatedMinutesWatched','subscribersGained','subscribersLost'], d: ['country'] },
     demographics: { m: ['viewerPercentage'], d: ['ageGroup','gender'] },
     devices:      { m: ['views','estimatedMinutesWatched'], d: ['deviceType'] },
@@ -857,7 +856,6 @@
     const { metrics, dimensions } = getSelectedAnalytics();
     return {
       metrics, dimensions,
-      contentType: $('analyticsContentType').value,
       sortBy:      $('analyticsSortBy').value,
       sortDir:     $('analyticsSortDir').value,
       maxResults:  parseInt($('analyticsMaxResults').value) || 200,
@@ -865,6 +863,8 @@
       relative:    $('analyticsRelative').value,
       dateFrom:    $('analyticsDateFrom').value,
       dateTo:      $('analyticsDateTo').value,
+      durationMin: $('analyticsDurationMin').value,
+      durationMax: $('analyticsDurationMax').value,
       view:        currentView,
     };
   }
@@ -874,11 +874,12 @@
     document.querySelectorAll('.adi').forEach(cb => { cb.checked = (p.dimensions || []).includes(cb.dataset.key); });
     document.querySelectorAll('.fg-master[data-group="ana-metrics"], .fg-master[data-group="ana-dims"]').forEach(syncMaster);
 
-    $('analyticsContentType').value = p.contentType || '';
     $('analyticsSortDir').value     = p.sortDir     || 'desc';
     $('analyticsMaxResults').value  = p.maxResults  || 200;
     $('analyticsCompare').checked   = !!p.compare;
     $('analyticsRelative').value    = p.relative    || '';
+    $('analyticsDurationMin').value = p.durationMin != null ? p.durationMin : '';
+    $('analyticsDurationMax').value = p.durationMax != null ? p.durationMax : '';
 
     refreshSortOptions();
     if (p.sortBy) $('analyticsSortBy').value = p.sortBy;
@@ -965,8 +966,12 @@
     const sort    = `${sortDir}${sortBy}`;
 
     const maxResults  = Math.max(1, parseInt($('analyticsMaxResults').value) || 200);
-    const contentType = $('analyticsContentType').value || null;
     const compare     = $('analyticsCompare').checked;
+
+    const durMinVal   = $('analyticsDurationMin').value;
+    const durMaxVal   = $('analyticsDurationMax').value;
+    const durationMin = durMinVal !== '' ? Number(durMinVal) : null;
+    const durationMax = durMaxVal !== '' ? Number(durMaxVal) : null;
 
     // Warn if comparing with day/month dimension (dates won't align)
     if (compare && (dimensions.includes('day') || dimensions.includes('month'))) {
@@ -981,7 +986,8 @@
 
     try {
       const reportOpts = {
-        startDate, endDate, metrics, dimensions, sort, maxResults, contentType,
+        startDate, endDate, metrics, dimensions, sort, maxResults,
+        durationMin, durationMax,
         onProgress: (msg, frac) => setAnaProgress(frac, msg)
       };
 
@@ -997,7 +1003,19 @@
         rows = res.rows;
       }
 
-      if (!rows?.length) { toast('Nenhum dado encontrado para o período.', 'info'); return; }
+      if (!rows?.length) {
+        const hint = (durationMin != null || durationMax != null)
+          ? ' Verifique se o filtro de duração não está excluindo todos os vídeos.'
+          : '';
+        toast('Nenhum dado encontrado para o período.' + hint, 'info', 6000);
+        return;
+      }
+
+      // Show an info about the duration filter result
+      if (durationMin != null || durationMax != null) {
+        const range = `${durationMin != null ? '≥'+durationMin+'s' : ''}${durationMin != null && durationMax != null ? ' e ' : ''}${durationMax != null ? '≤'+durationMax+'s' : ''}`;
+        toast(`Filtro de duração ativo: ${range}.`, 'info', 4000);
+      }
 
       lastReportData = { rows, metrics, dimensions, hasComparison: compare };
       renderAnalyticsTable(rows);

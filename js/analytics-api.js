@@ -113,30 +113,46 @@ const AnalyticsAPI = (() => {
     return uploads;
   }
 
-  /* ── Count videos published in [startDate, endDate] ───────── */
-  // Walks the uploads playlist (newest → oldest) and stops once items get older
-  // than the period start.
-  async function getVideosPublishedInPeriod(startDate, endDate) {
+  /* ── Count videos published in [startDate, endDate] ─────────
+     If durationMin/durationMax are provided, only videos within that
+     duration range are counted (uses the cached durations).            */
+  async function getVideosPublishedInPeriod(startDate, endDate, durationMin = null, durationMax = null) {
+    const start = new Date(startDate + 'T00:00:00Z').getTime();
+    const end   = new Date(endDate   + 'T23:59:59Z').getTime();
+
+    // Need publishedAt for each video → walk uploads playlist
     const uploads = await getUploadsPlaylistId();
     if (!uploads) return 0;
 
-    const start = new Date(startDate + 'T00:00:00Z').getTime();
-    const end   = new Date(endDate   + 'T23:59:59Z').getTime();
+    // Build a duration lookup if filter is active
+    const hasDurationFilter = (durationMin != null || durationMax != null);
+    let durationById = null;
+    if (hasDurationFilter) {
+      const all = await getAllVideosWithDuration();
+      durationById = Object.fromEntries(all.map(v => [v.id, v.durationSec]));
+    }
 
     let count = 0;
     let pageToken = '';
     let stop = false;
-
     while (!stop) {
       const params = { part: 'contentDetails', playlistId: uploads, maxResults: 50 };
       if (pageToken) params.pageToken = pageToken;
       const data = await dataGet('playlistItems', params);
 
       for (const it of (data.items || [])) {
-        const t = new Date(it.contentDetails?.videoPublishedAt || 0).getTime();
+        const id = it.contentDetails?.videoId;
+        const t  = new Date(it.contentDetails?.videoPublishedAt || 0).getTime();
         if (!t) continue;
-        if (t >= start && t <= end) count++;
-        if (t < start) stop = true;   // playlist is newest first → past the start
+        if (t < start) { stop = true; continue; }
+        if (t > end)   continue;
+
+        if (hasDurationFilter) {
+          const d = durationById[id] || 0;
+          if (durationMin != null && d < durationMin) continue;
+          if (durationMax != null && d > durationMax) continue;
+        }
+        count++;
       }
       if (!data.nextPageToken) stop = true;
       pageToken = data.nextPageToken;
@@ -379,11 +395,73 @@ const AnalyticsAPI = (() => {
   const PER_ROW_SYNTHETIC    = ['engagements'];
   const SYNTHETIC_METRICS    = [...PER_PERIOD_SYNTHETIC, ...PER_ROW_SYNTHETIC];
 
+  /* ── Video durations cache (for duration filter) ─────────────
+     Walking the uploads playlist + videos.list once per session.
+     Keys: 'all' → [{id, durationSec, publishedAt}, …]                  */
+  let videoDurationsCache = null;
+
+  function parseISODuration(iso) {
+    if (!iso) return 0;
+    const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+    if (!m) return 0;
+    return (parseInt(m[1] || 0) * 3600) + (parseInt(m[2] || 0) * 60) + parseInt(m[3] || 0);
+  }
+
+  async function getAllVideosWithDuration(onProgress) {
+    if (videoDurationsCache) return videoDurationsCache;
+    const uploads = await getUploadsPlaylistId();
+    if (!uploads) return [];
+
+    // 1) Walk uploads playlist to collect all video IDs (newest first)
+    const ids = [];
+    let pageToken = '';
+    let pageCount = 0;
+    while (true) {
+      const params = { part: 'contentDetails', playlistId: uploads, maxResults: 50 };
+      if (pageToken) params.pageToken = pageToken;
+      const data = await dataGet('playlistItems', params);
+      for (const it of (data.items || [])) {
+        const id = it.contentDetails?.videoId;
+        if (id) ids.push(id);
+      }
+      pageCount++;
+      if (onProgress) onProgress(`Listando vídeos do canal (${ids.length} encontrados)…`, 0.05);
+      if (!data.nextPageToken) break;
+      pageToken = data.nextPageToken;
+      if (pageCount > 200) break;  // safety: 10000 videos max
+    }
+
+    // 2) Fetch durations in batches of 50
+    const result = [];
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50);
+      const data = await dataGet('videos', { part: 'contentDetails', id: batch.join(',') });
+      for (const it of (data.items || [])) {
+        result.push({
+          id:           it.id,
+          durationSec:  parseISODuration(it.contentDetails?.duration),
+        });
+      }
+      if (onProgress) onProgress(`Lendo durações (${result.length}/${ids.length})…`, 0.1);
+    }
+
+    videoDurationsCache = result;
+    return result;
+  }
+
+  async function getVideoIdsByDuration(minSec, maxSec, onProgress) {
+    const all = await getAllVideosWithDuration(onProgress);
+    return all
+      .filter(v => (minSec == null || v.durationSec >= minSec)
+                && (maxSec == null || v.durationSec <= maxSec))
+      .map(v => v.id);
+  }
+
   /* ── Custom report (à la carte metrics + dimensions) ───────── */
   // Returns { rows, rawRows } — `rows` is localized output; `rawRows` is the original
   // analytics response enriched with _title so the comparison join can use stable keys.
   // If `dimensions` is empty, the API returns a single aggregate row (channel total).
-  async function runCustomReport({ startDate, endDate, metrics, dimensions, sort, maxResults, contentType, onProgress, _label = '' }) {
+  async function runCustomReport({ startDate, endDate, metrics, dimensions, sort, maxResults, durationMin, durationMax, onProgress, _label = '' }) {
     if (!metrics?.length) throw new Error('Selecione ao menos uma métrica.');
     dimensions = dimensions || [];
 
@@ -393,6 +471,19 @@ const AnalyticsAPI = (() => {
 
     if (!apiMetrics.length && !dimensions.length && !syntheticMetrics.length) {
       throw new Error('Selecione ao menos uma métrica.');
+    }
+
+    // Build duration-based video ID filter, if any
+    let videoIdFilter = null;
+    if (durationMin != null || durationMax != null) {
+      if (onProgress) onProgress(`Filtrando vídeos por duração${_label ? ' — '+_label : ''}…`, 0.05);
+      const ids = await getVideoIdsByDuration(durationMin, durationMax, onProgress);
+      if (!ids.length) {
+        return { rows: [], rawRows: [], meta: { matchedVideos: 0 } };
+      }
+      // YouTube Analytics filter URL has a length limit (~500 IDs ≈ 6KB).
+      // Truncate by recency (uploads playlist is newest-first).
+      videoIdFilter = ids.slice(0, 500);
     }
 
     if (onProgress) onProgress(`Consultando YouTube Analytics${_label ? ' — '+_label : ''}…`, 0.2);
@@ -415,7 +506,7 @@ const AnalyticsAPI = (() => {
       };
       if (dimensions.length) params.dimensions = dimensions.join(',');
       if (sort && apiMetricsArray.includes(sort.replace(/^-/, ''))) params.sort = sort;
-      if (contentType)       params.filters    = `creatorContentType==${contentType}`;
+      if (videoIdFilter)     params.filters    = `video==${videoIdFilter.join(',')}`;
 
       const data = await analyticsGet(params);
       rawRows    = toRows(data);
@@ -436,11 +527,17 @@ const AnalyticsAPI = (() => {
     const syntheticValues = {};
     if (syntheticMetrics.includes('videosPublishedInPeriod')) {
       if (onProgress) onProgress(`Contando vídeos publicados no período${_label ? ' — '+_label : ''}…`, 0.75);
-      syntheticValues.videosPublishedInPeriod = await getVideosPublishedInPeriod(startDate, endDate);
+      syntheticValues.videosPublishedInPeriod = await getVideosPublishedInPeriod(startDate, endDate, durationMin, durationMax);
     }
     if (syntheticMetrics.includes('totalChannelVideos')) {
-      const ch = await getMyChannel();
-      syntheticValues.totalChannelVideos = ch.videoCount || 0;
+      // If duration filter is active, "total of channel" means the count after filtering
+      if (durationMin != null || durationMax != null) {
+        const matched = await getVideoIdsByDuration(durationMin, durationMax);
+        syntheticValues.totalChannelVideos = matched.length;
+      } else {
+        const ch = await getMyChannel();
+        syntheticValues.totalChannelVideos = ch.videoCount || 0;
+      }
     }
 
     if (onProgress) onProgress('Concluído', 1);

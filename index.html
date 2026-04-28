@@ -302,7 +302,6 @@
             <span class="filter-group-label">Receitas prontas (opcional)</span>
             <div class="date-presets">
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="totalChannel">Total do canal</button>
-              <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="totalByContentType">Total × Tipo (Short/Longo)</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="geography">Audiência por país</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="demographics">Faixa etária × Gênero</button>
               <button class="btn btn-sm btn-ghost recipe-btn" data-recipe="devices">Dispositivos</button>
@@ -370,7 +369,6 @@
                   <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="sharingService"           > Serviço de compartilhamento</label>
                   <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="subscribedStatus"         > Status de inscrição</label>
                   <label class="fi-label"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="liveOrOnDemand"           > Ao vivo / Sob demanda</label>
-                  <label class="fi-label" title="Divide os resultados em Vídeo Longo, Short, Ao vivo e Story — cada um vira uma linha"><input type="checkbox" class="fi adi" data-group="ana-dims" data-key="creatorContentType"       > Tipo de conteúdo (Short / Longo / Live)</label>
                 </div>
               </div>
             </div>
@@ -400,13 +398,11 @@
               </label>
               <label class="date-row"><span>De</span><input type="date" id="analyticsDateFrom" class="input input-sm"></label>
               <label class="date-row"><span>Até</span><input type="date" id="analyticsDateTo" class="input input-sm"></label>
-<label class="date-row" title="Filtro nem sempre é aceito pela API (varia por canal). Para resultados garantidos, use a dimensão 'Tipo de conteúdo'."><span>Filtrar tipo (experimental)</span>
-                <select id="analyticsContentType" class="input input-sm">
-                  <option value="">Todos (recomendado)</option>
-                  <option value="SHORTS">Somente Shorts</option>
-                  <option value="VIDEO_ON_DEMAND">Somente vídeos longos</option>
-                  <option value="LIVE_STREAM">Somente ao vivo</option>
-                </select>
+<label class="date-row" title="Filtra os vídeos pela duração antes de agregar. Mais de 180s = vídeos longos. Até 180s = Shorts. Em branco = todos."><span>Duração mín. (seg)</span>
+                <input type="number" id="analyticsDurationMin" class="input input-sm" value="181" min="0" placeholder="ex: 181 = vídeos longos">
+              </label>
+              <label class="date-row"><span>Duração máx. (seg)</span>
+                <input type="number" id="analyticsDurationMax" class="input input-sm" min="0" placeholder="ex: 180 = só Shorts">
               </label>
               <label class="date-row"><span>Ordenar por</span>
                 <select id="analyticsSortBy" class="input input-sm">
