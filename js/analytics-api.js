@@ -488,10 +488,10 @@ const AnalyticsAPI = (() => {
 
     if (onProgress) onProgress(`Consultando YouTube Analytics${_label ? ' — '+_label : ''}…`, 0.2);
 
-    // For 'engagements' synthetic, ensure likes/dislikes/comments are fetched
+    // For 'engagements' synthetic, ensure likes/dislikes/comments/shares are fetched
     const apiMetricsToFetch = new Set(apiMetrics);
     if (syntheticMetrics.includes('engagements')) {
-      ['likes', 'dislikes', 'comments'].forEach(m => apiMetricsToFetch.add(m));
+      ['likes', 'dislikes', 'comments', 'shares'].forEach(m => apiMetricsToFetch.add(m));
     }
     const apiMetricsArray = [...apiMetricsToFetch];
 
@@ -562,7 +562,10 @@ const AnalyticsAPI = (() => {
         const label = METRIC_LABELS[m] || m;
         let v;
         if (m === 'engagements') {
-          v = (Number(r.likes) || 0) + (Number(r.dislikes) || 0) + (Number(r.comments) || 0);
+          v = (Number(r.likes)    || 0)
+            + (Number(r.dislikes) || 0)
+            + (Number(r.comments) || 0)
+            + (Number(r.shares)   || 0);
         } else if (PER_PERIOD_SYNTHETIC.includes(m)) {
           v = syntheticValues[m];
         } else {

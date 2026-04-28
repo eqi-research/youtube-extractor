@@ -591,6 +591,7 @@
   function initExport() {
     $('exportCsvBtn').addEventListener('click',  () => { if (tableInstance) tableInstance.download('csv',  `youtube-data-${dateTag()}.csv`,  { bom: true }); });
     $('exportXlsxBtn').addEventListener('click', () => { if (tableInstance) tableInstance.download('xlsx', `youtube-data-${dateTag()}.xlsx`, { sheetName: 'Dados YT' }); });
+    $('exportPdfBtn').addEventListener('click',  () => exportTabulatorToPDF(tableInstance, `youtube-data-${dateTag()}.pdf`, 'Dados YouTube — Open'));
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -746,6 +747,7 @@
     $('analyticsXlsxBtn').addEventListener('click', () => {
       if (analyticsTableInstance) analyticsTableInstance.download('xlsx', `analytics-${dateTag()}.xlsx`, { sheetName: 'Analytics' });
     });
+    $('analyticsPdfBtn').addEventListener('click',  () => exportAnalyticsToPDF());
 
     // Show all rows toggle
     let anaShowingAll = false;
@@ -1258,6 +1260,121 @@
     const color = dPct > 0 ? 'var(--green)' : dPct < 0 ? 'var(--accent)' : 'var(--muted2)';
     const arr   = dPct > 0 ? '▲' : dPct < 0 ? '▼' : '•';
     return `<span style="color:${color};font-weight:600">${arr} ${dPct.toLocaleString('pt-BR')}%</span>`;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     PDF EXPORT
+  ───────────────────────────────────────────────────────────────*/
+  // Header info shown at the top of every analytics PDF.
+  function buildPdfHeader() {
+    const from = $('analyticsDateFrom').value;
+    const to   = $('analyticsDateTo').value;
+    const dur  = [];
+    if ($('analyticsDurationMin').value !== '') dur.push(`≥ ${$('analyticsDurationMin').value}s`);
+    if ($('analyticsDurationMax').value !== '') dur.push(`≤ ${$('analyticsDurationMax').value}s`);
+    const durTxt = dur.length ? ` · Duração: ${dur.join(' / ')}` : '';
+    const cmp    = $('analyticsCompare').checked ? ' · Com comparação período anterior' : '';
+    return {
+      title:    'YouTube Analytics',
+      subtitle: `Período: ${from} → ${to}${durTxt}${cmp}`,
+      generated: 'Gerado em ' + new Date().toLocaleString('pt-BR')
+    };
+  }
+
+  // Tabulator → PDF (uses jspdf-autotable). Used for Open tab AND for the
+  // table view of the Private tab.
+  function exportTabulatorToPDF(table, filename, title) {
+    if (!table) { toast('Sem dados pra exportar.', 'error'); return; }
+    table.download('pdf', filename, {
+      orientation: 'landscape',
+      title:        title,
+      autoTable:    {
+        styles:     { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [224, 32, 32], textColor: 255 },
+        margin:     { top: 18, right: 8, bottom: 10, left: 8 },
+      },
+    });
+    toast('PDF gerado!', 'success');
+  }
+
+  // Analytics tab dispatcher: chooses table-PDF or panel-PDF based on view.
+  async function exportAnalyticsToPDF() {
+    if (currentView === 'table') {
+      const hdr = buildPdfHeader();
+      exportTabulatorToPDF(analyticsTableInstance, `analytics-${dateTag()}.pdf`, `${hdr.title} — ${hdr.subtitle}`);
+    } else {
+      await exportPanelToPDF();
+    }
+  }
+
+  // Panel view → captures the cards grid as image and embeds in a paginated PDF.
+  async function exportPanelToPDF() {
+    const target = $('analyticsPanel');
+    if (!target || !target.children.length) { toast('Painel vazio. Gere um relatório primeiro.', 'error'); return; }
+    if (typeof html2canvas !== 'function' || !window.jspdf) {
+      toast('Bibliotecas de PDF ainda carregando, tente em 2 segundos.', 'error'); return;
+    }
+
+    toast('Capturando painel… isso leva alguns segundos.', 'info', 8000);
+
+    // Render the canvas at 2× for sharper output
+    const canvas = await html2canvas(target, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      windowWidth:  target.scrollWidth,
+      windowHeight: target.scrollHeight,
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf       = new jsPDF('p', 'mm', 'a4');
+    const pageW     = pdf.internal.pageSize.getWidth();
+    const pageH     = pdf.internal.pageSize.getHeight();
+    const margin    = 8;
+    const headerSpace = 16;          // top reserved for title + subtitle
+
+    const hdr = buildPdfHeader();
+
+    // Compute final image dimensions (fit to page width)
+    const imgW = pageW - margin * 2;
+    const imgH = (canvas.height * imgW) / canvas.width;
+
+    // Draw the same image across pages, shifting Y on each subsequent page
+    let heightLeft = imgH;
+    let position   = headerSpace;
+    let firstPage  = true;
+
+    const drawHeader = () => {
+      pdf.setFontSize(13);
+      pdf.setTextColor(20);
+      pdf.text(hdr.title, margin, 8);
+      pdf.setFontSize(9);
+      pdf.setTextColor(80);
+      pdf.text(hdr.subtitle, margin, 13);
+    };
+
+    const imgData = canvas.toDataURL('image/png');
+
+    drawHeader();
+    pdf.addImage(imgData, 'PNG', margin, position, imgW, imgH);
+    heightLeft -= (pageH - position - margin);
+
+    while (heightLeft > 0) {
+      pdf.addPage();
+      drawHeader();
+      // Negative Y "scrolls" the image up so only the next slice shows
+      position = headerSpace - (imgH - heightLeft);
+      pdf.addImage(imgData, 'PNG', margin, position, imgW, imgH);
+      heightLeft -= (pageH - headerSpace - margin);
+    }
+
+    // Footer with timestamp on the last page
+    pdf.setFontSize(8);
+    pdf.setTextColor(140);
+    pdf.text(hdr.generated, margin, pageH - 4);
+
+    pdf.save(`analytics-painel-${dateTag()}.pdf`);
+    toast('PDF gerado!', 'success');
   }
 
   /* ─────────────────────────────────────────────────────────────

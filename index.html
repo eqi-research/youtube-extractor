@@ -10,6 +10,9 @@
   <script src="https://unpkg.com/tabulator-tables@6.2.5/dist/js/tabulator.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="stylesheet" href="css/app.css">
 </head>
@@ -222,8 +225,9 @@
             <span id="tableStats" class="text-muted"></span>
             <div class="table-actions">
               <button id="showAllRowsBtn" class="btn btn-sm btn-ghost">Mostrar todas as linhas</button>
-              <button id="exportCsvBtn"   class="btn btn-sm btn-ghost">Export CSV</button>
-              <button id="exportXlsxBtn"  class="btn btn-sm btn-accent">Export XLSX</button>
+              <button id="exportCsvBtn"   class="btn btn-sm btn-ghost">CSV</button>
+              <button id="exportXlsxBtn"  class="btn btn-sm btn-ghost">XLSX</button>
+              <button id="exportPdfBtn"   class="btn btn-sm btn-accent">&#128196; PDF</button>
             </div>
           </div>
           <div id="dataTable"></div>
@@ -335,7 +339,7 @@
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="dislikes"                        > Dislikes</label>
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="shares"                          > Compartilhamentos</label>
                   <label class="fi-label"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="comments"                        > Comentários</label>
-                  <label class="fi-label" title="Soma de likes + dislikes + comentários (calculado localmente)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="engagements"                     > Engajamentos <small style="color:var(--muted2)">(likes + dislikes + comentários)</small></label>
+                  <label class="fi-label" title="Soma de likes + dislikes + comentários + compartilhamentos (calculado localmente)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="engagements"                     > Engajamentos <small style="color:var(--muted2)">(likes + dislikes + comentários + shares)</small></label>
                   <label class="fi-label" title="Espectadores únicos no período. Só funciona com algumas dimensões (não combina com video, country, etc.)"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="uniqueViewers"                > Espectadores Únicos <small style="color:var(--muted2)">(dimensões limitadas)</small></label>
                   <label class="fi-label" title="% de cards clicados quando exibidos durante o vídeo"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardClickRate"                > CTR de Cards (%)</label>
                   <label class="fi-label" title="Quantas vezes os cards foram exibidos durante os vídeos"><input type="checkbox" class="fi afi" data-group="ana-metrics" data-key="cardImpressions"              > Impressões de Cards</label>
@@ -448,8 +452,9 @@
               <button id="viewPanelBtn" class="view-btn"        title="Mostrar como painel de cards">&#128203; Painel</button>
             </div>
             <button id="analyticsShowAllBtn" class="btn btn-sm btn-ghost">Mostrar todas as linhas</button>
-            <button id="analyticsCsvBtn"  class="btn btn-sm btn-ghost">Export CSV</button>
-            <button id="analyticsXlsxBtn" class="btn btn-sm btn-accent">Export XLSX</button>
+            <button id="analyticsCsvBtn"  class="btn btn-sm btn-ghost">CSV</button>
+            <button id="analyticsXlsxBtn" class="btn btn-sm btn-ghost">XLSX</button>
+            <button id="analyticsPdfBtn"  class="btn btn-sm btn-accent">&#128196; PDF</button>
           </div>
         </div>
         <div id="analyticsTable"></div>
