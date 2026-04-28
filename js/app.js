@@ -3,9 +3,10 @@
 ;(function () {
 
   /* ── State ──────────────────────────────────────────────────── */
-  let activeListId   = null;
-  let pendingChannel = null;
-  let tableInstance  = null;
+  let activeListId    = null;
+  let pendingChannel  = null;
+  let tableInstance   = null;
+  let openCurrentView = 'table';   // 'table' | 'gallery' (Open tab)
 
   const $ = id => document.getElementById(id);
 
@@ -521,6 +522,9 @@
     }
 
     setTimeout(() => $('tablePanel').scrollIntoView({ behavior: 'smooth' }), 200);
+
+    // Re-render gallery se estiver visível
+    if (openCurrentView === 'gallery') renderGallery();
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -591,7 +595,170 @@
   function initExport() {
     $('exportCsvBtn').addEventListener('click',  () => { if (tableInstance) tableInstance.download('csv',  `youtube-data-${dateTag()}.csv`,  { bom: true }); });
     $('exportXlsxBtn').addEventListener('click', () => { if (tableInstance) tableInstance.download('xlsx', `youtube-data-${dateTag()}.xlsx`, { sheetName: 'Dados YT' }); });
-    $('exportPdfBtn').addEventListener('click',  () => exportTabulatorToPDF(tableInstance, `youtube-data-${dateTag()}.pdf`, 'Dados YouTube — Open'));
+    $('exportPdfBtn').addEventListener('click',  () => {
+      // Despacha conforme a view atual
+      if (openCurrentView === 'gallery') exportGalleryToPDF();
+      else                               exportTabulatorToPDF(tableInstance, `youtube-data-${dateTag()}.pdf`, 'Dados YouTube — Open');
+    });
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     GALLERY VIEW (Open tab)
+  ───────────────────────────────────────────────────────────────*/
+  function initGalleryToggle() {
+    $('openViewTableBtn').addEventListener('click',   () => applyOpenView('table'));
+    $('openViewGalleryBtn').addEventListener('click', () => applyOpenView('gallery'));
+    $('gallerySortBy').addEventListener('change', renderGallery);
+  }
+
+  function applyOpenView(view) {
+    openCurrentView = view;
+    $('openViewTableBtn').classList.toggle('active',   view === 'table');
+    $('openViewGalleryBtn').classList.toggle('active', view === 'gallery');
+    $('dataTable').style.display      = view === 'table'   ? '' : 'none';
+    $('dataGallery').style.display    = view === 'gallery' ? '' : 'none';
+    $('gallerySortBy').style.display  = view === 'gallery' ? '' : 'none';
+    $('showAllRowsBtn').style.display = view === 'table'   ? '' : 'none';
+    if (view === 'gallery') renderGallery();
+  }
+
+  function renderGallery() {
+    const container = $('dataGallery');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!tableInstance) {
+      container.innerHTML = '<div class="gallery-empty">Gere uma busca primeiro para ver os vídeos.</div>';
+      return;
+    }
+
+    // Use rows currently visible in the Tabulator (respects header filters)
+    let rows = tableInstance.getData('active');
+    if (!rows.length) {
+      container.innerHTML = '<div class="gallery-empty">Nenhum vídeo nessa filtragem.</div>';
+      return;
+    }
+
+    // Verifica se o campo Thumbnail foi extraído
+    const hasThumb = rows.some(r => r['Thumbnail']);
+    if (!hasThumb) {
+      container.innerHTML = `
+        <div class="gallery-empty">
+          ⚠️ Marque o campo <strong>"Thumbnail (URL)"</strong> em <em>Identificação</em> e clique em <strong>Buscar dados</strong> de novo.<br>
+          A galeria precisa do link da thumbnail pra exibir as imagens.
+        </div>`;
+      return;
+    }
+
+    rows = sortGalleryRows(rows, $('gallerySortBy').value);
+
+    rows.forEach((r, i) => {
+      const card = document.createElement('div');
+      card.className = 'gallery-card';
+
+      const thumb     = esc(r['Thumbnail'] || '');
+      const title     = esc(r['Título']    || '(sem título)');
+      const channel   = esc(r['Canal']     || '');
+      const date      = esc(r['Publicado em'] || r['Publicado em (ISO)'] || '');
+      const views     = Number(r['Views']) || 0;
+      const likes     = Number(r['Likes']) || 0;
+      const comments  = Number(r['Comentários']) || 0;
+      const duration  = esc(r['Duração'] || '');
+      const url       = esc(r['URL'] || '');
+
+      card.innerHTML = `
+        <div class="gallery-rank">#${i + 1}</div>
+        <img class="gallery-thumb" src="${thumb}" alt="" loading="lazy" onerror="this.style.background='var(--bg4)';this.src=''">
+        <div class="gallery-info">
+          <h3 class="gallery-title">${title}</h3>
+          <div class="gallery-meta">
+            ${channel  ? `<span class="gallery-channel">${channel}</span>`         : ''}
+            ${date     ? `<span>${date}</span>`                                    : ''}
+            ${duration ? `<span>⏱ ${duration}</span>`                              : ''}
+          </div>
+          <div class="gallery-stats">
+            <span class="gallery-views">▶ ${fmtNum(views)} views</span>
+            ${likes    ? `<span>👍 ${fmtNum(likes)}</span>`    : ''}
+            ${comments ? `<span>💬 ${fmtNum(comments)}</span>` : ''}
+          </div>
+          ${url ? `<a class="gallery-link" href="${url}" target="_blank">Abrir no YouTube ↗</a>` : ''}
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function sortGalleryRows(rows, sort) {
+    const arr = [...rows];
+    const getDate = r => {
+      const s = r['Publicado em (ISO)'] || r['Publicado em'] || '';
+      const t = new Date(s).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+    switch (sort) {
+      case 'views-desc': arr.sort((a, b) => (Number(b.Views) || 0) - (Number(a.Views) || 0)); break;
+      case 'views-asc':  arr.sort((a, b) => (Number(a.Views) || 0) - (Number(b.Views) || 0)); break;
+      case 'channel':    arr.sort((a, b) => (a.Canal || '').localeCompare(b.Canal || '', 'pt-BR')); break;
+      case 'date-desc':  arr.sort((a, b) => getDate(b) - getDate(a)); break;
+      case 'date-asc':   arr.sort((a, b) => getDate(a) - getDate(b)); break;
+      case 'likes-desc': arr.sort((a, b) => (Number(b.Likes) || 0) - (Number(a.Likes) || 0)); break;
+    }
+    return arr;
+  }
+
+  // PDF export of the gallery (visual snapshot via html2canvas)
+  async function exportGalleryToPDF() {
+    const target = $('dataGallery');
+    if (!target || !target.children.length) { toast('Galeria vazia.', 'error'); return; }
+    if (typeof html2canvas !== 'function' || !window.jspdf) {
+      toast('Bibliotecas de PDF ainda carregando, tente em 2 segundos.', 'error'); return;
+    }
+
+    toast('Capturando galeria… isso leva alguns segundos.', 'info', 8000);
+
+    const canvas = await html2canvas(target, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      windowWidth: target.scrollWidth,
+      useCORS: true,
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const headerSpace = 16;
+
+    const imgW = pageW - margin * 2;
+    const imgH = (canvas.height * imgW) / canvas.width;
+
+    const drawHeader = () => {
+      pdf.setFontSize(13); pdf.setTextColor(20);
+      pdf.text('Galeria de Thumbnails — YouTube Extractor', margin, 8);
+      pdf.setFontSize(9);  pdf.setTextColor(80);
+      pdf.text(`Ordenação: ${$('gallerySortBy').selectedOptions[0]?.text || ''} · Gerado em ${new Date().toLocaleString('pt-BR')}`, margin, 13);
+    };
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+
+    let heightLeft = imgH;
+    let position   = headerSpace;
+
+    drawHeader();
+    pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+    heightLeft -= (pageH - position - margin);
+
+    while (heightLeft > 0) {
+      pdf.addPage();
+      drawHeader();
+      position = headerSpace - (imgH - heightLeft);
+      pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+      heightLeft -= (pageH - headerSpace - margin);
+    }
+
+    pdf.save(`galeria-thumbnails-${dateTag()}.pdf`);
+    toast('PDF gerado!', 'success');
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -1389,6 +1556,7 @@
     initAddChannel();
     initFetch();
     initExport();
+    initGalleryToggle();
     initShowAllRows();
     initPrivateTab();
     renderLists();

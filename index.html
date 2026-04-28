@@ -224,6 +224,18 @@
           <div class="table-topbar">
             <span id="tableStats" class="text-muted"></span>
             <div class="table-actions">
+              <div class="view-toggle">
+                <button id="openViewTableBtn"   class="view-btn active" title="Mostrar como tabela">&#128202; Tabela</button>
+                <button id="openViewGalleryBtn" class="view-btn"        title="Ver thumbnails dos vídeos">&#127912; Galeria</button>
+              </div>
+              <select id="gallerySortBy" class="input input-sm" style="display:none;width:auto">
+                <option value="views-desc">Views (maior → menor)</option>
+                <option value="views-asc">Views (menor → maior)</option>
+                <option value="channel">Canal (A → Z)</option>
+                <option value="date-desc">Data (mais recente)</option>
+                <option value="date-asc">Data (mais antiga)</option>
+                <option value="likes-desc">Likes (maior → menor)</option>
+              </select>
               <button id="showAllRowsBtn" class="btn btn-sm btn-ghost">Mostrar todas as linhas</button>
               <button id="exportCsvBtn"   class="btn btn-sm btn-ghost">CSV</button>
               <button id="exportXlsxBtn"  class="btn btn-sm btn-ghost">XLSX</button>
@@ -231,6 +243,7 @@
             </div>
           </div>
           <div id="dataTable"></div>
+          <div id="dataGallery" class="data-gallery" style="display:none"></div>
         </section>
 
       </main>
