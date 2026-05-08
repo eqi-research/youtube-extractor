@@ -422,6 +422,8 @@
   function setProgress(frac, text) {
     $('progressFill').style.width = Math.round(Math.min(frac, 1) * 100) + '%';
     $('progressText').textContent = text;
+    // Mantém o progresso sempre visível mesmo em telas curtas
+    $('progressArea').scrollIntoView({ block: 'end', behavior: 'smooth' });
   }
 
   /* ─────────────────────────────────────────────────────────────

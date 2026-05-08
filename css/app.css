@@ -245,7 +245,7 @@ html, body {
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 20px 20px 80px 20px;   /* espaço extra embaixo pra texto não ser cortado */
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -545,11 +545,29 @@ html, body {
 .quota-hint strong { color: var(--text); }
 
 /* ─── Fetch / Progress ───────────────────────────────────────── */
-.fetch-area { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.fetch-area { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Barra de progresso ocupa a linha inteira mas só uma linha (texto trunca por elipses) */
+#progressArea, #analyticsProgress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 28px;
+}
+#progressText, #analyticsProgressText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
 
 .progress-bar {
   height: 6px;
   width: 240px;
+  flex-shrink: 0;
   background: var(--bg4);
   border-radius: 3px;
   overflow: hidden;
