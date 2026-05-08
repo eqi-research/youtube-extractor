@@ -892,3 +892,15 @@ html, body {
   color: var(--muted2);
   font-size: 14px;
 }
+
+/* ─── Thumbnail download (Top N) ─────────────────────────────── */
+.thumb-dl-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+}
+.thumb-dl-group input { padding: 4px 6px; }

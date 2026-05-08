@@ -355,6 +355,7 @@
   ───────────────────────────────────────────────────────────────*/
   function initFetch() {
     $('fetchBtn').addEventListener('click', fetchData);
+    $('extractTxtBtn').addEventListener('click', extractTranscripts);
   }
 
   function getSelectedFields() {
@@ -422,6 +423,184 @@
     $('progressFill').style.width = Math.round(Math.min(frac, 1) * 100) + '%';
     $('progressText').textContent = text;
   }
+
+  /* ─────────────────────────────────────────────────────────────
+     EXTRAIR TRANSCRIÇÕES (TXT) — qualitativo, separado de Buscar dados
+  ───────────────────────────────────────────────────────────────*/
+  async function extractTranscripts() {
+    const key = getApiKey(); if (!key) return;
+    if (!activeListId) { toast('Selecione uma lista primeiro.', 'error'); return; }
+
+    const list = Storage.loadLists().find(l => l.id === activeListId);
+    if (!list?.channels?.length) { toast('Adicione canais à lista antes.', 'error'); return; }
+
+    // Reusa os filtros já configurados (datas, máx. vídeos, duração)
+    const durationMinVal = $('durationMin').value;
+    const durationMaxVal = $('durationMax').value;
+    const langPref       = $('transcriptLang').value;
+
+    // Campos mínimos suficientes pra montar nome de arquivo + header
+    const options = {
+      selectedFields: ['Canal', 'Título', 'ID do Vídeo', 'URL', 'Publicado em', 'Views'],
+      dateFrom:    $('dateFrom').value || null,
+      dateTo:      $('dateTo').value   || null,
+      maxResults:  Math.max(1, parseInt($('maxResults').value) || 500),
+      durationMin: durationMinVal !== '' ? Number(durationMinVal) : null,
+      durationMax: durationMaxVal !== '' ? Number(durationMaxVal) : null,
+    };
+
+    const btnTxt   = $('extractTxtBtn');
+    const btnFetch = $('fetchBtn');
+    btnTxt.disabled   = true;
+    btnFetch.disabled = true;
+    $('progressArea').style.display = 'flex';
+    setProgress(0, 'Listando vídeos…');
+
+    try {
+      // FASE 1: listar vídeos com a API oficial (mesma rotina do Buscar dados)
+      const videos = await YTAPI.extractVideos(list.channels, key, options, {
+        onChannelStart: (ch, ci, total) => setProgress(ci / total * 0.25, `Canal ${ci + 1}/${total}: ${ch.name}`),
+        onProgress:     (ch, msg, ci, total, frac) => setProgress(((ci + frac) / total) * 0.25, `${ch.name} — ${msg}`),
+        onError:        (ch, err) => toast(`Erro em ${ch.name}: ${err.message}`, 'error', 5000),
+      });
+
+      if (!videos.length) { toast('Nenhum vídeo encontrado com esses filtros.', 'info'); return; }
+
+      // Confirmação se for muita coisa (cada transcrição leva 2-5s nas instâncias públicas)
+      if (videos.length > 30) {
+        const estimatedMin = Math.ceil(videos.length * 3 / 60);
+        const ok = await showModal({
+          message: `Encontrados ${videos.length} vídeos. Baixar transcrições pode levar ~${estimatedMin} min (instâncias públicas têm rate limit). Continuar?`,
+          confirmLabel: 'Continuar',
+        });
+        if (!ok) return;
+      }
+
+      // FASE 2: baixar transcrições, sequencial com pequena pausa pra não estourar rate limit
+      const zip      = new JSZip();
+      const folder   = zip.folder('transcricoes');
+      const manifest = [];
+      let done = 0, failed = 0, noCaption = 0;
+
+      for (let i = 0; i < videos.length; i++) {
+        const v   = videos[i];
+        const vid = v['ID do Vídeo'];
+        if (!vid) continue;
+
+        const titleShort = (v['Título'] || vid).slice(0, 50);
+        setProgress(0.25 + ((i + 1) / videos.length) * 0.7,
+                    `Transcrição ${i + 1}/${videos.length}: ${titleShort}…`);
+
+        const result = await Transcripts.fetchTranscript(vid, langPref);
+
+        const rank    = String(i + 1).padStart(3, '0');
+        const channel = sanitizeFilenamePart(v['Canal']  || 'canal', 30);
+        const title   = sanitizeFilenamePart(v['Título'] || vid,     60);
+        const fname   = `${rank}_${channel}_${title}.txt`;
+
+        if (result.ok) {
+          const header = [
+            `# ${v['Título'] || ''}`,
+            `# Canal:    ${v['Canal'] || ''}`,
+            `# URL:      ${v['URL'] || `https://youtube.com/watch?v=${vid}`}`,
+            `# Publicado: ${v['Publicado em'] || ''}`,
+            `# Views:    ${(Number(v['Views']) || 0).toLocaleString('pt-BR')}`,
+            `# Idioma:   ${result.label || result.language || '?'}`,
+            `# Fonte:    ${result.source || ''}`,
+            '',
+            '─────────────────────────────────────────────────────',
+            '',
+          ].join('\n');
+          folder.file(fname, header + result.text);
+          done++;
+          manifest.push(`✓ ${rank}. [${result.language}] ${v['Canal']} | ${v['Título']}`);
+        } else {
+          if (result.error?.includes('sem legendas')) noCaption++;
+          else                                        failed++;
+          manifest.push(`✗ ${rank}. ${v['Canal']} | ${v['Título']} | ${result.error}`);
+        }
+
+        // Pausa entre requisições pra ser gentil com instâncias públicas
+        if (i < videos.length - 1) await sleep(450);
+      }
+
+      // Manifest final
+      const manifestTxt = [
+        `Transcrições — gerado em ${new Date().toLocaleString('pt-BR')}`,
+        `Idioma preferido: ${langPref}`,
+        `Total de vídeos: ${videos.length}`,
+        `  ✓ ${done} transcrições baixadas`,
+        `  ⊘ ${noCaption} sem legendas disponíveis no YouTube`,
+        `  ✗ ${failed} falharam (rede / instância / formato)`,
+        '',
+        ...manifest,
+      ].join('\n');
+      folder.file('_manifest.txt', manifestTxt);
+
+      // Bônus: arquivo único concatenado (útil pra colar em LLM)
+      if (done > 0) {
+        const allInOne = manifest
+          .filter(line => line.startsWith('✓'))
+          .map((_, idx) => {
+            const v = videos.find((_, vi) => String(vi + 1).padStart(3, '0') === manifest[idx]?.match(/(\d{3})/)?.[1]);
+            return null;  // (placeholder; built below differently)
+          });
+
+        const concatenated = videos
+          .map((v, i) => {
+            const vid = v['ID do Vídeo']; if (!vid) return null;
+            const rank  = String(i + 1).padStart(3, '0');
+            const ch    = sanitizeFilenamePart(v['Canal']  || 'canal', 30);
+            const tt    = sanitizeFilenamePart(v['Título'] || vid,     60);
+            const fname = `${rank}_${ch}_${tt}.txt`;
+            const file  = folder.files[`transcricoes/${fname}`];
+            if (!file) return null;
+            return null; // we'll assemble from manifest below
+          });
+
+        // Simpler: rebuild from what we already have
+        let combined = `# Todas as transcrições — ${new Date().toLocaleString('pt-BR')}\n\n`;
+        for (let i = 0; i < videos.length; i++) {
+          const v   = videos[i];
+          const vid = v['ID do Vídeo']; if (!vid) continue;
+          const rank  = String(i + 1).padStart(3, '0');
+          const ch    = sanitizeFilenamePart(v['Canal']  || 'canal', 30);
+          const tt    = sanitizeFilenamePart(v['Título'] || vid,     60);
+          const fname = `transcricoes/${rank}_${ch}_${tt}.txt`;
+          if (zip.files[fname]) {
+            const content = await zip.files[fname].async('string');
+            combined += `\n\n══════════════════════════════════════════════════════\n${content}`;
+          }
+        }
+        zip.file('todas-as-transcricoes.txt', combined);
+      }
+
+      if (!done) {
+        toast(`Nenhuma transcrição baixada. ${noCaption} vídeos não têm legendas, ${failed} falharam.`, 'error', 8000);
+        return;
+      }
+
+      setProgress(1, `Gerando ZIP de ${done} transcrições…`);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a    = Object.assign(document.createElement('a'), {
+        href:     URL.createObjectURL(blob),
+        download: `transcricoes-${dateTag()}.zip`,
+      });
+      a.click();
+      URL.revokeObjectURL(a.href);
+
+      toast(`✓ ${done} transcrições no ZIP. ${noCaption} sem legenda · ${failed} falharam.`, 'success', 6000);
+
+    } catch (err) {
+      toast('Erro: ' + err.message, 'error', 7000);
+      setProgress(0, 'Erro.');
+    } finally {
+      btnTxt.disabled   = false;
+      btnFetch.disabled = false;
+    }
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   /* ─────────────────────────────────────────────────────────────
      TABLE
@@ -528,39 +707,70 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
-     DOWNLOAD THUMBNAILS AS ZIP
+     DOWNLOAD THUMBNAILS AS ZIP (Top N, com nomes informativos)
   ───────────────────────────────────────────────────────────────*/
+  function getCurrentDisplayRows() {
+    if (!tableInstance) return [];
+    const visible = tableInstance.getData('active');
+    // Se estiver na galeria, respeita a ordenação do dropdown da galeria
+    if (openCurrentView === 'gallery') {
+      return sortGalleryRows(visible, $('gallerySortBy').value);
+    }
+    return visible;
+  }
+
+  function sanitizeFilenamePart(s, maxLen = 60) {
+    return String(s || '')
+      .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, maxLen) || 'sem-titulo';
+  }
+
   async function downloadThumbnailsZip() {
-    if (!tableInstance) return;
+    if (!tableInstance) { toast('Faça uma busca antes.', 'error'); return; }
 
-    // Use only the currently filtered/visible rows
-    const data  = tableInstance.getData('active');
-    const items = data.filter(row => row['Thumbnail']);
+    const all = getCurrentDisplayRows();
+    if (!all.length) { toast('Nenhum vídeo na visualização atual.', 'error'); return; }
 
-    if (!items.length) {
-      toast('Nenhuma thumbnail disponível nas linhas visíveis.', 'error');
+    const qtyInput = parseInt($('thumbDlQty').value);
+    const qty      = Number.isFinite(qtyInput) && qtyInput > 0 ? qtyInput : all.length;
+
+    const slice = all.slice(0, qty).filter(r => r['Thumbnail']);
+    if (!slice.length) {
+      toast('Nenhuma thumbnail disponível. Marque o campo "Thumbnail (URL)" em Identificação e busque de novo.', 'error', 7000);
       return;
     }
 
-    toast(`Preparando ${items.length} thumbnails…`, 'info', 20000);
+    const dropped = all.slice(0, qty).length - slice.length;
+    if (dropped > 0) {
+      toast(`${dropped} item(ns) sem thumbnail foram pulados.`, 'info', 4000);
+    }
 
-    const zip    = new JSZip();
-    const folder = zip.folder('thumbnails');
+    toast(`Baixando ${slice.length} thumbnails…`, 'info', 30000);
 
-    // Fetch in batches of 8 to avoid overwhelming the browser
-    const BATCH = 8;
+    const zip      = new JSZip();
+    const folder   = zip.folder('thumbnails');
+    const channels = new Set();
+
     let done = 0, failed = 0;
+    const BATCH = 8;
 
-    for (let i = 0; i < items.length; i += BATCH) {
-      const batch = items.slice(i, i + BATCH);
+    for (let i = 0; i < slice.length; i += BATCH) {
+      const batch = slice.slice(i, i + BATCH);
       await Promise.all(batch.map(async (row, bi) => {
-        const url = row['Thumbnail'];
-        const idx = i + bi;
-        // Build filename: prefer ID, fall back to index
-        const id    = row['ID do Vídeo'] || String(idx + 1).padStart(4, '0');
-        const fname = `${id}.jpg`;
+        const idx     = i + bi;
+        const rank    = String(idx + 1).padStart(3, '0');
+        const channel = sanitizeFilenamePart(row['Canal'] || 'canal', 30);
+        const title   = sanitizeFilenamePart(row['Título'] || row['ID do Vídeo'] || 'video', 60);
+        const views   = Number(row['Views']);
+        const viewTxt = Number.isFinite(views) ? `_${views}views` : '';
+        const fname   = `${rank}_${channel}_${title}${viewTxt}.jpg`;
+        if (row['Canal']) channels.add(row['Canal']);
+
         try {
-          const res  = await fetch(url);
+          const res = await fetch(row['Thumbnail']);
           if (!res.ok) throw new Error('HTTP ' + res.status);
           const blob = await res.blob();
           folder.file(fname, blob);
@@ -569,24 +779,39 @@
           failed++;
         }
       }));
+      // Atualiza progresso a cada batch
+      toast(`Baixando ${done}/${slice.length}…`, 'info', 1500);
     }
 
     if (!done) { toast('Não foi possível baixar nenhuma thumbnail.', 'error'); return; }
+
+    // Inclui um arquivo manifest.txt com a lista ordenada
+    const manifest = [
+      `Galeria de Thumbnails — gerada em ${new Date().toLocaleString('pt-BR')}`,
+      `Total: ${done} (${failed} falharam)`,
+      `Canais: ${[...channels].join(', ') || '—'}`,
+      '',
+      ...slice.slice(0, done).map((r, i) => {
+        const rank  = String(i + 1).padStart(3, '0');
+        const views = Number(r['Views']) || 0;
+        return `${rank}. ${r['Canal'] || ''} | ${r['Título'] || ''} | ${views.toLocaleString('pt-BR')} views | ${r['URL'] || ''}`;
+      })
+    ].join('\n');
+    folder.file('_manifest.txt', manifest);
 
     toast(`Gerando ZIP de ${done} thumbnails…`, 'info', 10000);
 
     const content = await zip.generateAsync({ type: 'blob' });
     const a = Object.assign(document.createElement('a'), {
       href:     URL.createObjectURL(content),
-      download: `thumbnails-${dateTag()}.zip`
+      download: `thumbnails-top${done}-${dateTag()}.zip`
     });
     a.click();
     URL.revokeObjectURL(a.href);
 
-    const msg = failed
+    toast(failed
       ? `ZIP gerado: ${done} thumbnails (${failed} falharam).`
-      : `ZIP gerado com ${done} thumbnails!`;
-    toast(msg, 'success');
+      : `ZIP gerado com ${done} thumbnails!`, 'success');
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -600,6 +825,7 @@
       if (openCurrentView === 'gallery') exportGalleryToPDF();
       else                               exportTabulatorToPDF(tableInstance, `youtube-data-${dateTag()}.pdf`, 'Dados YouTube — Open');
     });
+    $('thumbDlBtn').addEventListener('click', downloadThumbnailsZip);
   }
 
   /* ─────────────────────────────────────────────────────────────

@@ -211,7 +211,15 @@
           </div>
 
           <div class="fetch-area">
-            <button id="fetchBtn" class="btn btn-accent btn-lg">&#9654; Buscar dados</button>
+            <button id="fetchBtn"        class="btn btn-accent btn-lg">&#9654; Buscar dados</button>
+            <button id="extractTxtBtn"   class="btn btn-ghost  btn-lg" title="Baixar as transcrições/legendas dos vídeos como ZIP de TXTs (qualitativo)">&#128221; Extrair TXT</button>
+            <select id="transcriptLang" class="input input-sm" title="Idioma preferido para as legendas. Cai no próximo se não houver.">
+              <option value="pt-BR">Português (BR) preferido</option>
+              <option value="pt">Português (qualquer)</option>
+              <option value="en">Inglês preferido</option>
+              <option value="es">Espanhol preferido</option>
+              <option value="any">Qualquer idioma</option>
+            </select>
             <div id="progressArea" style="display:none">
               <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
               <span id="progressText" class="text-muted"></span>
@@ -237,6 +245,11 @@
                 <option value="likes-desc">Likes (maior → menor)</option>
               </select>
               <button id="showAllRowsBtn" class="btn btn-sm btn-ghost">Mostrar todas as linhas</button>
+              <span class="thumb-dl-group" title="Baixar as N primeiras thumbnails (segundo a ordenação atual) como ZIP">
+                <label for="thumbDlQty" style="font-size:11px;color:var(--muted)">Top</label>
+                <input type="number" id="thumbDlQty" class="input input-sm" value="50" min="1" max="2000" style="width:64px">
+                <button id="thumbDlBtn" class="btn btn-sm btn-ghost">&#128230; Thumbs ZIP</button>
+              </span>
               <button id="exportCsvBtn"   class="btn btn-sm btn-ghost">CSV</button>
               <button id="exportXlsxBtn"  class="btn btn-sm btn-ghost">XLSX</button>
               <button id="exportPdfBtn"   class="btn btn-sm btn-accent">&#128196; PDF</button>
@@ -494,6 +507,7 @@
   <script src="js/storage.js"></script>
   <script src="js/api.js"></script>
   <script src="js/analytics-api.js"></script>
+  <script src="js/transcripts.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
