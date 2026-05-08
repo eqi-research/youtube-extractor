@@ -517,7 +517,9 @@
         } else {
           if (result.error?.includes('sem legendas')) noCaption++;
           else                                        failed++;
-          manifest.push(`✗ ${rank}. ${v['Canal']} | ${v['Título']} | ${result.error}`);
+          // Inclui detalhes do erro para diagnóstico
+          const detail = result.details ? ` :: ${result.details}` : '';
+          manifest.push(`✗ ${rank}. ${v['Canal']} | ${v['Título']} | ${result.error}${detail}`);
         }
 
         // Pausa entre requisições pra ser gentil com instâncias públicas
