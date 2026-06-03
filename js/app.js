@@ -429,10 +429,16 @@
       return;
     }
 
+    // Data compacta YYYYMMDD pra nome de arquivo curto (ex: VPT_20260603.json)
+    const today = new Date();
+    const compactDate = today.getFullYear().toString()
+                      + String(today.getMonth() + 1).padStart(2, '0')
+                      + String(today.getDate()).padStart(2, '0');
+
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a    = Object.assign(document.createElement('a'), {
       href:     URL.createObjectURL(blob),
-      download: `videos-pra-transcrever-${dateTag()}.json`,
+      download: `VPT_${compactDate}.json`,
     });
     a.click();
     URL.revokeObjectURL(a.href);
