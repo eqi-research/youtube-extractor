@@ -355,7 +355,89 @@
   ───────────────────────────────────────────────────────────────*/
   function initFetch() {
     $('fetchBtn').addEventListener('click', fetchData);
-    $('extractTxtBtn').addEventListener('click', extractTranscripts);
+    $('exportPythonJsonBtn').addEventListener('click', exportPythonJson);
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     EXPORTAR JSON PRA SCRIPT PYTHON LOCAL DE TRANSCRIÇÕES
+  ───────────────────────────────────────────────────────────────*/
+  async function exportPythonJson() {
+    if (!activeListId) { toast('Selecione uma lista primeiro.', 'error'); return; }
+    const key = getApiKey(); if (!key) return;
+
+    const list = Storage.loadLists().find(l => l.id === activeListId);
+    if (!list?.channels?.length) { toast('Adicione canais à lista antes.', 'error'); return; }
+
+    // Se já temos uma tabela com dados, reusa. Senão, busca os vídeos.
+    let videos = null;
+    if (tableInstance) {
+      const rows = tableInstance.getData('active');
+      if (rows.length && rows.some(r => r['ID do Vídeo'])) {
+        videos = rows;
+      }
+    }
+
+    if (!videos) {
+      // Não tem tabela ainda — busca os vídeos primeiro
+      const durationMinVal = $('durationMin').value;
+      const durationMaxVal = $('durationMax').value;
+
+      const options = {
+        selectedFields: ['Canal', 'Título', 'ID do Vídeo', 'URL', 'Publicado em', 'Views'],
+        dateFrom:    $('dateFrom').value || null,
+        dateTo:      $('dateTo').value   || null,
+        maxResults:  Math.max(1, parseInt($('maxResults').value) || 500),
+        durationMin: durationMinVal !== '' ? Number(durationMinVal) : null,
+        durationMax: durationMaxVal !== '' ? Number(durationMaxVal) : null,
+      };
+
+      const btn = $('exportPythonJsonBtn');
+      btn.disabled = true;
+      $('progressArea').style.display = 'flex';
+      setProgress(0, 'Listando vídeos…');
+
+      try {
+        videos = await YTAPI.extractVideos(list.channels, key, options, {
+          onChannelStart: (ch, ci, total) => setProgress(ci / total, `Canal ${ci + 1}/${total}: ${ch.name}`),
+          onProgress:     (ch, msg, ci, total, frac) => setProgress(((ci + frac) / total), `${ch.name} — ${msg}`),
+          onError:        (ch, err) => toast(`Erro em ${ch.name}: ${err.message}`, 'error', 5000),
+        });
+      } catch (err) {
+        toast('Erro ao listar vídeos: ' + err.message, 'error', 7000);
+        return;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    if (!videos?.length) { toast('Nenhum vídeo encontrado.', 'info'); return; }
+
+    // Seleciona só os campos úteis pro script Python
+    const payload = videos
+      .filter(r => r['ID do Vídeo'])
+      .map(r => ({
+        'ID do Vídeo':  r['ID do Vídeo'],
+        'Título':       r['Título']       || '',
+        'Canal':        r['Canal']        || '',
+        'Views':        Number(r['Views']) || 0,
+        'URL':          r['URL']          || '',
+        'Publicado em': r['Publicado em'] || '',
+      }));
+
+    if (!payload.length) {
+      toast('Os campos "ID do Vídeo" e "Canal" precisam estar marcados nos campos extraídos.', 'error', 7000);
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a    = Object.assign(document.createElement('a'), {
+      href:     URL.createObjectURL(blob),
+      download: `videos-pra-transcrever-${dateTag()}.json`,
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    toast(`✓ ${payload.length} vídeos exportados. Use com o script Python (pasta python-transcript-downloader).`, 'success', 7000);
   }
 
   function getSelectedFields() {
@@ -427,7 +509,10 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
-     EXTRAIR TRANSCRIÇÕES (TXT) — qualitativo, separado de Buscar dados
+     [LEGADO] Extração de transcrições via Cloudflare Worker.
+     Mantido por enquanto mas não é mais usado — o YouTube bloqueou
+     todas as alternativas serverless em 2024-2026. Vide README do
+     python-transcript-downloader/ pra fluxo atual.
   ───────────────────────────────────────────────────────────────*/
   async function extractTranscripts() {
     const key = getApiKey(); if (!key) return;
@@ -527,6 +612,8 @@
         // Pausa entre requisições pra ser gentil com instâncias públicas
         if (i < videos.length - 1) await sleep(450);
       }
+
+      setProgress(0.96, `Montando ZIP de ${done} transcrições…`);
 
       // Manifest final
       const manifestTxt = [

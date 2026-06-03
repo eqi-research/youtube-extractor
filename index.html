@@ -212,14 +212,7 @@
 
           <div class="fetch-area">
             <button id="fetchBtn"        class="btn btn-accent btn-lg">&#9654; Buscar dados</button>
-            <button id="extractTxtBtn"   class="btn btn-ghost  btn-lg" title="Baixar as transcrições/legendas dos vídeos como ZIP de TXTs (qualitativo)">&#128221; Extrair TXT</button>
-            <select id="transcriptLang" class="input input-sm" title="Idioma preferido para as legendas. Cai no próximo se não houver.">
-              <option value="pt-BR">Português (BR) preferido</option>
-              <option value="pt">Português (qualquer)</option>
-              <option value="en">Inglês preferido</option>
-              <option value="es">Espanhol preferido</option>
-              <option value="any">Qualquer idioma</option>
-            </select>
+            <button id="exportPythonJsonBtn" class="btn btn-ghost btn-lg" title="Exportar lista de vídeos como JSON para usar com o script Python local de transcrições (veja pasta python-transcript-downloader/)">&#128221; JSON pra transcrições</button>
             <div id="progressArea" style="display:none">
               <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
               <span id="progressText" class="text-muted"></span>

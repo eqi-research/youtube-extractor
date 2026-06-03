@@ -4,10 +4,12 @@
 
 const Storage = (() => {
 
-  const KEY_API       = 'yte_apikey';
-  const KEY_LISTS     = 'yte_lists';
-  const KEY_CLIENT_ID = 'yte_oauth_client_id';
-  const KEY_PRESETS   = 'yte_analytics_presets';
+  const KEY_API           = 'yte_apikey';
+  const KEY_LISTS         = 'yte_lists';
+  const KEY_CLIENT_ID     = 'yte_oauth_client_id';
+  const KEY_PRESETS       = 'yte_analytics_presets';
+  const KEY_WORKER_URL    = 'yte_transcript_worker_url';
+  const KEY_SUPADATA_KEY  = 'yte_supadata_api_key';
 
   /* ── API Key ───────────────────────────────────────────────── */
   function saveApiKey(key) { localStorage.setItem(KEY_API, key); }
@@ -16,6 +18,14 @@ const Storage = (() => {
   /* ── OAuth Client ID ───────────────────────────────────────── */
   function saveClientId(id) { localStorage.setItem(KEY_CLIENT_ID, id); }
   function loadClientId()   { return localStorage.getItem(KEY_CLIENT_ID) || ''; }
+
+  /* ── Cloudflare Worker URL (transcripts) ───────────────────── */
+  function saveWorkerUrl(url) { localStorage.setItem(KEY_WORKER_URL, url); }
+  function loadWorkerUrl()    { return localStorage.getItem(KEY_WORKER_URL) || ''; }
+
+  /* ── Supadata API key (transcripts) ────────────────────────── */
+  function saveSupadataKey(k) { localStorage.setItem(KEY_SUPADATA_KEY, k); }
+  function loadSupadataKey()  { return localStorage.getItem(KEY_SUPADATA_KEY) || ''; }
 
   /* ── Lists ─────────────────────────────────────────────────── */
   function loadLists() {
@@ -110,6 +120,8 @@ const Storage = (() => {
   return {
     saveApiKey, loadApiKey,
     saveClientId, loadClientId,
+    saveWorkerUrl, loadWorkerUrl,
+    saveSupadataKey, loadSupadataKey,
     loadLists, saveLists,
     createList, updateList, deleteList, duplicateList,
     addChannelToList, removeChannelFromList,

@@ -43,7 +43,7 @@ const Transcripts = (() => {
   }
 
   /* ── HTTP with timeout ───────────────────────────────────────── */
-  async function fetchWithTimeout(url, ms = 9000) {
+  async function fetchWithTimeout(url, ms = 5000) {
     const ctrl = new AbortController();
     const t    = setTimeout(() => ctrl.abort(), ms);
     try {
@@ -52,6 +52,13 @@ const Transcripts = (() => {
       clearTimeout(t);
     }
   }
+
+  // Instâncias com score >= BLACKLIST_THRESHOLD são puladas pelo restante
+  // da sessão (não vale a pena insistir).
+  const BLACKLIST_THRESHOLD = 4;
+  // Tempo máximo total por vídeo (em ms) — protege contra acumular timeouts
+  // de várias instâncias falhando em sequência.
+  const VIDEO_BUDGET_MS = 18000;
 
   /* ── Caption track picker ────────────────────────────────────── */
   function pickCaption(captions, langPref) {
@@ -176,52 +183,121 @@ const Transcripts = (() => {
     };
   }
 
+  /* ── Try Supadata API (paid service, most reliable) ─────────── */
+  async function trySupadata(apiKey, videoId, langPref) {
+    // Supadata usa códigos ISO 639-1 (sem -BR/-US etc)
+    const lang = langPref === 'any' ? '' : langPref.split('-')[0].toLowerCase();
+    const url  = `https://api.supadata.ai/v1/youtube/transcript?videoId=${encodeURIComponent(videoId)}&text=true${lang ? `&lang=${lang}` : ''}`;
+
+    const res = await fetchWithTimeout(url, 15000);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('API key inválida ou expirada');
+    }
+    if (res.status === 429) {
+      throw new Error('cota mensal Supadata esgotada');
+    }
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.text()).slice(0, 100); } catch {}
+      throw new Error(`HTTP ${res.status}${detail ? ': '+detail : ''}`);
+    }
+
+    const data = await res.json();
+    // Com text=true, content é string. Sem, é array de segmentos.
+    const text = typeof data.content === 'string'
+      ? data.content
+      : (data.content || []).map(c => c.text).join('\n');
+
+    if (!text || text.length < 10) return null;
+
+    return {
+      ok:       true,
+      text:     text.trim(),
+      language: data.lang || lang || 'unknown',
+      label:    data.lang || lang || 'desconhecido',
+      source:   'supadata',
+    };
+  }
+
+  /* ── Try Cloudflare Worker (fallback) ───────────────────────── */
+  async function tryWorker(workerUrl, videoId, langPref) {
+    const url = `${workerUrl.replace(/\/$/, '')}/?id=${encodeURIComponent(videoId)}&lang=${encodeURIComponent(langPref)}`;
+    const res = await fetchWithTimeout(url, 15000);  // mais generoso porque é nosso
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.ok) return null;  // erro lógico (sem legenda etc.) → null pra fallback
+    if (!data.text) return null;
+    return {
+      ok:       true,
+      text:     data.text,
+      language: data.language,
+      label:    data.label || data.language,
+      source:   `worker:${new URL(workerUrl).hostname}`,
+    };
+  }
+
   /* ── Public API: fetch transcript for one video ──────────────── */
   // Returns { ok, text, rawVtt, language, label, source, error, attempts }
   async function fetchTranscript(videoId, langPref = 'pt-BR') {
-    const errors = [];
+    const errors    = [];
+    const startTime = Date.now();
 
-    // Phase 1: Invidious instances
-    for (const inst of ranked(INVIDIOUS)) {
+    // Tenta primeiro o Cloudflare Worker do usuário (se configurado)
+    const workerUrl = (typeof Storage !== 'undefined' && Storage.loadWorkerUrl)
+      ? Storage.loadWorkerUrl() : '';
+    if (workerUrl) {
       try {
-        const result = await tryInvidious(inst, videoId, langPref);
+        const result = await tryWorker(workerUrl, videoId, langPref);
+        if (result) return { ...result, attempts: 1 };
+        errors.push(`worker: sem dados`);
+      } catch (e) {
+        errors.push(`worker: ${e.message}`);
+      }
+    }
+
+    // Mistura Invidious e Piped na ordem de menor failureScore
+    const allInstances = [
+      ...ranked(INVIDIOUS).map(u => ({ type: 'inv',   url: u })),
+      ...ranked(PIPED).map(   u => ({ type: 'piped', url: u })),
+    ];
+
+    for (const { type, url: inst } of allInstances) {
+      // Budget global expirado — não vale a pena gastar mais tempo nesse vídeo
+      if (Date.now() - startTime > VIDEO_BUDGET_MS) {
+        errors.push(`budget excedido (${Math.round((Date.now() - startTime)/1000)}s)`);
+        break;
+      }
+      // Instância já comprovadamente quebrada nessa sessão — pula sem tentar
+      if (failureScore[inst] >= BLACKLIST_THRESHOLD) {
+        continue;
+      }
+
+      try {
+        const result = type === 'inv'
+          ? await tryInvidious(inst, videoId, langPref)
+          : await tryPiped(   inst, videoId, langPref);
+
         if (result) {
           failureScore[inst] = Math.max(0, failureScore[inst] - 1);
           return { ...result, attempts: errors.length + 1 };
         }
-        // null = empty list, not an instance failure → still increment lightly
+        // null = lista de legendas vazia → instância "respondeu mas sem dados"
         failureScore[inst] += 0.3;
-        errors.push(`invidious ${inst}: vazio`);
+        errors.push(`${type} ${inst.replace(/^https?:\/\//, '')}: vazio`);
       } catch (e) {
         failureScore[inst] += 2;
-        errors.push(`invidious ${inst}: ${e.message}`);
+        errors.push(`${type} ${inst.replace(/^https?:\/\//, '')}: ${e.message}`);
       }
     }
 
-    // Phase 2: Piped instances
-    for (const inst of ranked(PIPED)) {
-      try {
-        const result = await tryPiped(inst, videoId, langPref);
-        if (result) {
-          failureScore[inst] = Math.max(0, failureScore[inst] - 1);
-          return { ...result, attempts: errors.length + 1 };
-        }
-        failureScore[inst] += 0.3;
-        errors.push(`piped ${inst}: vazio`);
-      } catch (e) {
-        failureScore[inst] += 2;
-        errors.push(`piped ${inst}: ${e.message}`);
-      }
-    }
+    // Diagnóstico no console pra debug
+    if (errors.length) console.warn(`[transcripts] ${videoId}:`, errors);
 
-    // Diagnostic: log first failure for debugging
-    if (errors.length) console.warn(`[transcripts] ${videoId}:`, errors.slice(0, 3));
-
-    // Distinguish "video genuinely has no captions" from "all providers failed"
-    const allEmpty = errors.every(e => e.endsWith('vazio'));
+    // Diferencia "vídeo realmente não tem legenda" de "tudo travou"
+    const allEmpty = errors.length > 0 && errors.every(e => e.endsWith('vazio'));
     return {
-      ok:    false,
-      error: allEmpty ? 'sem legendas (nenhuma instância encontrou)' : 'todas as instâncias falharam',
+      ok:       false,
+      error:    allEmpty ? 'sem legendas no YouTube' : 'instâncias falharam ou timeout',
       attempts: errors.length,
       details:  errors.slice(0, 3).join(' | '),
     };
