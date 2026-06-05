@@ -204,6 +204,10 @@ const YTAPI = (() => {
   }
 
   /* ── Main extraction entry point ────────────────────────────── */
+  // Quando há filtro de duração, paginamos página-por-página aplicando
+  // o filtro a cada batch, até atingir maxResults OU esgotar o canal.
+  // Isso garante "30 vídeos LONGOS mais recentes" em vez de
+  // "30 mais recentes filtrados a posteriori".
   async function extractVideos(channels, apiKey, options, callbacks = {}) {
     const {
       selectedFields,
@@ -214,43 +218,92 @@ const YTAPI = (() => {
 
     const { onChannelStart, onProgress, onChannelDone, onError } = callbacks;
 
-    const hasDurFilter    = durationMin !== null || durationMax !== null;
-    const parts           = buildParts(selectedFields, hasDurFilter);
-    const allRows         = [];
+    const hasDurFilter = durationMin !== null || durationMax !== null;
+    const parts        = buildParts(selectedFields, hasDurFilter);
+    const allRows      = [];
+
+    const dateFromISO  = dateFrom ? new Date(dateFrom).toISOString() : null;
+    const dateToISO    = dateTo   ? new Date(dateTo + 'T23:59:59Z').toISOString() : null;
+
+    // Limite de segurança pra evitar runaway em canais com muitos vídeos
+    const MAX_VIDEOS_SCANNED = 2000;
 
     for (let ci = 0; ci < channels.length; ci++) {
       const ch = channels[ci];
       try {
         if (onChannelStart) onChannelStart(ch, ci, channels.length);
 
-        // 1. Collect video IDs
-        const ids = await getVideoIds(ch.id, apiKey, {
-          dateFrom, dateTo, maxResults,
-          onProgress: (count) => {
-            if (onProgress) onProgress(ch, `Coletando IDs... ${count}`, ci, channels.length, 0.3);
+        // 1. Pega o ID da playlist de uploads
+        const chData = await get('channels',
+          { part: 'contentDetails', id: ch.id }, apiKey);
+        if (!chData.items?.length) throw new Error('Canal não encontrado.');
+        const uploadsId = chData.items[0].contentDetails.relatedPlaylists.uploads;
+
+        // 2. Pagina o feed de uploads, batch por batch
+        const channelRows = [];
+        let pageToken = '';
+        let scanned   = 0;
+        let stop      = false;
+
+        while (!stop && channelRows.length < maxResults) {
+          // 2a. Pega uma página de 50 IDs (mais novos primeiro)
+          const pageData = await get('playlistItems', {
+            part:       'snippet',
+            playlistId: uploadsId,
+            maxResults: 50,
+            pageToken:  pageToken || undefined,
+          }, apiKey);
+
+          // 2b. Filtra por data e coleta IDs desta página
+          const pageIds = [];
+          for (const item of (pageData.items || [])) {
+            const pub = item.snippet.publishedAt;
+            if (dateFromISO && pub < dateFromISO) { stop = true; break; }
+            if (dateToISO   && pub > dateToISO)   continue;
+            pageIds.push(item.snippet.resourceId.videoId);
           }
-        });
 
-        if (onProgress) onProgress(ch, `${ids.length} IDs coletados. Baixando detalhes...`, ci, channels.length, 0.5);
+          // 2c. Busca detalhes deste batch (1 quota unit)
+          if (pageIds.length) {
+            const data = await get('videos',
+              { part: parts.join(','), id: pageIds.join(',') }, apiKey);
 
-        // 2. Fetch video details
-        const items = await getVideoDetails(ids, apiKey, parts);
+            for (const item of (data.items || [])) {
+              if (channelRows.length >= maxResults) { stop = true; break; }
 
-        // 3. Map + filter by duration
-        let kept = 0;
-        for (const item of items) {
-          if (hasDurFilter) {
-            const sec = parseDurationSec(item.contentDetails?.duration || '');
-            if (durationMin !== null && sec < durationMin) continue;
-            if (durationMax !== null && sec > durationMax) continue;
+              // Aplica filtro de duração
+              if (hasDurFilter) {
+                const sec = parseDurationSec(item.contentDetails?.duration || '');
+                if (durationMin !== null && sec < durationMin) continue;
+                if (durationMax !== null && sec > durationMax) continue;
+              }
+
+              const row = {};
+              for (const f of selectedFields) row[f] = extractField(f, item, ch);
+              channelRows.push(row);
+            }
           }
-          const row = {};
-          for (const f of selectedFields) row[f] = extractField(f, item, ch);
-          allRows.push(row);
-          kept++;
+
+          scanned += pageIds.length;
+
+          if (onProgress) {
+            const msg = hasDurFilter
+              ? `${channelRows.length}/${maxResults} aceitos (${scanned} vasculhados)`
+              : `${channelRows.length}/${maxResults} coletados`;
+            onProgress(ch, msg, ci, channels.length, Math.min(channelRows.length / maxResults, 0.9));
+          }
+
+          // Sai se não tem mais páginas, ou se passou do limite de segurança
+          if (!pageData.nextPageToken) break;
+          if (scanned >= MAX_VIDEOS_SCANNED) {
+            if (onProgress) onProgress(ch, `Limite de ${MAX_VIDEOS_SCANNED} vídeos analisados atingido.`, ci, channels.length, 1);
+            break;
+          }
+          pageToken = pageData.nextPageToken;
         }
 
-        if (onChannelDone) onChannelDone(ch, kept, ids.length);
+        allRows.push(...channelRows);
+        if (onChannelDone) onChannelDone(ch, channelRows.length, scanned);
 
       } catch (err) {
         if (onError) onError(ch, err);
