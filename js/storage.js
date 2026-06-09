@@ -10,6 +10,10 @@ const Storage = (() => {
   const KEY_PRESETS       = 'yte_analytics_presets';
   const KEY_WORKER_URL    = 'yte_transcript_worker_url';
   const KEY_SUPADATA_KEY  = 'yte_supadata_api_key';
+  const KEY_PROJECT_PATH  = 'yte_python_project_path';
+
+  // Caminho padrão pra pasta python-transcript-downloader (ajustável via UI)
+  const DEFAULT_PROJECT_PATH = 'C:\\Users\\RenatoSantiagoDeOliv\\OneDrive - EQI Investimentos\\Área de Trabalho\\git_\\youtube-extractor\\python-transcript-downloader';
 
   /* ── API Key ───────────────────────────────────────────────── */
   function saveApiKey(key) { localStorage.setItem(KEY_API, key); }
@@ -26,6 +30,10 @@ const Storage = (() => {
   /* ── Supadata API key (transcripts) ────────────────────────── */
   function saveSupadataKey(k) { localStorage.setItem(KEY_SUPADATA_KEY, k); }
   function loadSupadataKey()  { return localStorage.getItem(KEY_SUPADATA_KEY) || ''; }
+
+  /* ── Python script project path ─────────────────────────────── */
+  function saveProjectPath(p) { localStorage.setItem(KEY_PROJECT_PATH, p); }
+  function loadProjectPath()  { return localStorage.getItem(KEY_PROJECT_PATH) || DEFAULT_PROJECT_PATH; }
 
   /* ── Lists ─────────────────────────────────────────────────── */
   function loadLists() {
@@ -122,6 +130,7 @@ const Storage = (() => {
     saveClientId, loadClientId,
     saveWorkerUrl, loadWorkerUrl,
     saveSupadataKey, loadSupadataKey,
+    saveProjectPath, loadProjectPath,
     loadLists, saveLists,
     createList, updateList, deleteList, duplicateList,
     addChannelToList, removeChannelFromList,

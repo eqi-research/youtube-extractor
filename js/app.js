@@ -356,6 +356,23 @@
   function initFetch() {
     $('fetchBtn').addEventListener('click', fetchData);
     $('exportPythonJsonBtn').addEventListener('click', exportPythonJson);
+    $('configPathBtn').addEventListener('click', configurePythonPath);
+  }
+
+  /* Modal pra configurar o caminho da pasta python-transcript-downloader */
+  async function configurePythonPath() {
+    const current = Storage.loadProjectPath();
+    const path = await showModal({
+      message: 'Caminho completo da pasta python-transcript-downloader (onde está o download.py):',
+      withInput:    true,
+      inputDefault: current,
+      confirmLabel: 'Salvar',
+    });
+    if (path === null) return;
+    const trimmed = (path || '').trim();
+    if (!trimmed) { toast('Caminho não pode estar vazio.', 'error'); return; }
+    Storage.saveProjectPath(trimmed);
+    toast(`✓ Pasta configurada: ${trimmed.length > 60 ? '…' + trimmed.slice(-57) : trimmed}`, 'success', 5000);
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -435,15 +452,76 @@
                       + String(today.getMonth() + 1).padStart(2, '0')
                       + String(today.getDate()).padStart(2, '0');
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const a    = Object.assign(document.createElement('a'), {
-      href:     URL.createObjectURL(blob),
-      download: `VPT_${compactDate}.json`,
-    });
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const jsonFilename = `VPT_${compactDate}.json`;
+    const batFilename  = `rodar_VPT_${compactDate}.bat`;
 
-    toast(`✓ ${payload.length} vídeos exportados. Use com o script Python (pasta python-transcript-downloader).`, 'success', 7000);
+    // 1. Baixa o JSON
+    const jsonBlob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    triggerBlobDownload(jsonBlob, jsonFilename);
+
+    // 2. Baixa o .bat (atalho que roda o script com 1 clique duplo)
+    const projectPath = Storage.loadProjectPath();
+    const batContent = buildBatScript(projectPath, jsonFilename);
+    // BAT precisa de line endings Windows; charset utf-8 com BOM ajuda no encoding
+    const batBlob = new Blob(['﻿' + batContent], { type: 'application/octet-stream' });
+
+    // Pequeno delay pra evitar que o browser ignore o segundo download
+    setTimeout(() => triggerBlobDownload(batBlob, batFilename), 300);
+
+    toast(
+      `✓ ${payload.length} vídeos exportados.\n\n` +
+      `Baixei 2 arquivos: ${jsonFilename} + ${batFilename}\n\n` +
+      `Vai em Downloads e clica DUAS VEZES no .bat pra rodar.`,
+      'success', 10000
+    );
+  }
+
+  /* Helper: dispara download de um Blob com nome */
+  function triggerBlobDownload(blob, filename) {
+    const a = Object.assign(document.createElement('a'), {
+      href:     URL.createObjectURL(blob),
+      download: filename,
+    });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }, 200);
+  }
+
+  /* Monta o conteúdo do .bat que abre o cmd, navega até a pasta do script
+     e roda download.py passando o JSON que está ao lado do .bat. */
+  function buildBatScript(projectPath, jsonFilename) {
+    // %~dp0 = diretório onde está o .bat (provavelmente Downloads).
+    // Como JSON e .bat são baixados juntos na mesma pasta, isso resolve.
+    return [
+      '@echo off',
+      'chcp 65001 >nul',
+      'title YouTube Transcript Downloader',
+      'echo.',
+      'echo ============================================================',
+      'echo  YouTube Transcript Downloader',
+      `echo  Arquivo: ${jsonFilename}`,
+      'echo ============================================================',
+      'echo.',
+      `cd /d "${projectPath}"`,
+      'if errorlevel 1 (',
+      '  echo ERRO: Nao foi possivel encontrar a pasta do script:',
+      `  echo   ${projectPath}`,
+      '  echo.',
+      '  echo Configure o caminho correto na aba Open do app',
+      '  echo clicando no botao "engrenagem" ao lado do "JSON pra transcricoes".',
+      '  pause',
+      '  exit /b 1',
+      ')',
+      `python download.py "%~dp0${jsonFilename}" --resume`,
+      'echo.',
+      'echo ============================================================',
+      'echo  Pronto. Aperte qualquer tecla pra fechar esta janela.',
+      'echo ============================================================',
+      'pause >nul',
+    ].join('\r\n');
   }
 
   function getSelectedFields() {
