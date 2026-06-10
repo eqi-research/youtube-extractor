@@ -1240,7 +1240,8 @@
         const tab = btn.dataset.tab;
         document.querySelectorAll('.tab-btn').forEach(b  => b.classList.toggle('active', b.dataset.tab === tab));
         document.querySelectorAll('.tab-pane').forEach(p => p.style.display = p.id === `tab-${tab}` ? '' : 'none');
-        $('apikeyArea').style.display = tab === 'open' ? 'flex' : 'none';
+        // API key visível em Open e Handles (ambas usam Data API v3). Em Private usa OAuth.
+        $('apikeyArea').style.display = tab === 'private' ? 'none' : 'flex';
       });
     });
   }
@@ -1946,6 +1947,358 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
+     HANDLES RESOLVER (aba "🔎 Handles")
+  ───────────────────────────────────────────────────────────────*/
+  let handlesState   = null;
+  let currentResults = [];   // resultados da busca atual
+
+  function todayDateKey() {
+    const d = new Date();
+    return d.getFullYear().toString()
+         + String(d.getMonth() + 1).padStart(2, '0')
+         + String(d.getDate()).padStart(2, '0');
+  }
+
+  function todaySearchCount() {
+    const k = todayDateKey();
+    return handlesState.history?.[k] || 0;
+  }
+
+  function bumpTodaySearchCount() {
+    const k = todayDateKey();
+    handlesState.history = handlesState.history || {};
+    handlesState.history[k] = (handlesState.history[k] || 0) + 1;
+  }
+
+  function saveHandles() {
+    Storage.saveHandlesState(handlesState);
+    renderHandlesStats();
+  }
+
+  function initHandlesTab() {
+    handlesState = Storage.loadHandlesState();
+    $('handlesDailyLimit').value = handlesState.dailyLimit || 5;
+
+    $('handlesLoadBtn').addEventListener('click', loadHandlesList);
+    $('handlesClearBtn').addEventListener('click', clearHandlesList);
+    $('handlesNextBtn').addEventListener('click', () => searchNext(null));
+    $('handlesAltSearchBtn').addEventListener('click', () => {
+      const term = $('handlesAltQuery').value.trim();
+      if (!term) { toast('Digite um termo alternativo primeiro.', 'error'); return; }
+      // Re-buscar com termo alternativo (mantém o nome atual da fila)
+      searchAgainCurrent(term);
+    });
+    $('handlesNoMatchBtn').addEventListener('click', () => skipCurrent('no_match'));
+    $('handlesSkipBtn').addEventListener('click',    () => skipCurrent('no_youtube'));
+    $('handlesExportBtn').addEventListener('click',  exportHandlesCSV);
+    $('handlesDailyLimit').addEventListener('change', () => {
+      handlesState.dailyLimit = Math.max(1, parseInt($('handlesDailyLimit').value) || 5);
+      saveHandles();
+    });
+    $('handlesShowResolvedBtn').addEventListener('click', toggleResolvedList);
+
+    renderHandlesStats();
+    renderResolvedList();
+  }
+
+  function loadHandlesList() {
+    const text = $('handlesPaste').value;
+    if (!text.trim()) { toast('Cole pelo menos um nome.', 'error'); return; }
+
+    const newNames = text.split('\n')
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    if (!newNames.length) { toast('Lista vazia.', 'error'); return; }
+
+    // Append + dedupe (preserva ordem original)
+    const existing = new Set(handlesState.names);
+    let added = 0;
+    for (const n of newNames) {
+      if (!existing.has(n)) { handlesState.names.push(n); existing.add(n); added++; }
+    }
+    saveHandles();
+    $('handlesPaste').value = '';
+    toast(`✓ ${added} nomes adicionados à fila. ${newNames.length - added} já estavam na lista.`, 'success', 5000);
+  }
+
+  async function clearHandlesList() {
+    const ok = await showModal({
+      message: 'Apagar TODA a fila e os resultados já resolvidos? Isso não pode ser desfeito.',
+      confirmLabel: 'Apagar tudo',
+      dangerConfirm: true,
+    });
+    if (!ok) return;
+    handlesState = { names: [], results: {}, dailyLimit: handlesState.dailyLimit, history: {} };
+    saveHandles();
+    $('handlesSearchPanel').style.display = 'none';
+    renderResolvedList();
+    toast('Lista limpa.', 'info');
+  }
+
+  function getNextPendingName() {
+    for (const name of handlesState.names) {
+      const r = handlesState.results[name];
+      if (!r || r.status === 'pending') return name;
+    }
+    return null;
+  }
+
+  async function searchNext(_dummy) {
+    const key = getApiKey(); if (!key) return;
+
+    // Checa limite diário
+    const used  = todaySearchCount();
+    const limit = handlesState.dailyLimit || 5;
+    if (used >= limit) {
+      toast(`Limite diário de ${limit} buscas atingido. Volte amanhã ou aumente o limite.`, 'error', 8000);
+      return;
+    }
+
+    const name = getNextPendingName();
+    if (!name) { toast('Fila vazia ou tudo já foi resolvido.', 'info'); return; }
+
+    await doSearch(name, name);
+  }
+
+  async function searchAgainCurrent(altTerm) {
+    const key = getApiKey(); if (!key) return;
+    const used  = todaySearchCount();
+    const limit = handlesState.dailyLimit || 5;
+    if (used >= limit) {
+      toast(`Limite diário de ${limit} buscas atingido.`, 'error', 8000);
+      return;
+    }
+
+    const name = $('handlesCurrentName').textContent;
+    if (!name) { toast('Nenhum nome ativo.', 'error'); return; }
+    await doSearch(name, altTerm);
+  }
+
+  async function doSearch(name, query) {
+    const key = getApiKey(); if (!key) return;
+    const btn = $('handlesNextBtn');
+    btn.disabled = true;
+
+    $('handlesCurrentName').textContent = name;
+    const idx = handlesState.names.indexOf(name);
+    $('handlesPositionLabel').textContent = `Posição ${idx + 1} de ${handlesState.names.length}`;
+    $('handlesSearchPanel').style.display = 'block';
+    $('handlesResults').innerHTML = '<div class="text-muted" style="padding:20px;text-align:center">Buscando…</div>';
+    $('handlesAltQuery').value = '';
+
+    try {
+      // 1. Search (100 unidades)
+      const hits = await YTAPI.searchChannels(query, key, 5);
+      bumpTodaySearchCount();
+
+      if (!hits.length) {
+        $('handlesResults').innerHTML = '<div class="text-muted" style="padding:20px;text-align:center">Nenhum canal encontrado. Tente outro termo ou pule.</div>';
+        saveHandles();
+        return;
+      }
+
+      // 2. Detalhes (subscribers + handle) — 1 unidade
+      const details = await YTAPI.getChannelsDetails(hits.map(h => h.channelId), key);
+      const byId = Object.fromEntries(details.map(d => [d.id, d]));
+
+      currentResults = hits.map(h => {
+        const d = byId[h.channelId] || {};
+        return {
+          channelId:   h.channelId,
+          searchTitle: h.title,
+          title:       d.name        || h.title,
+          handle:      d.handle      || '',
+          subscribers: d.subscribers || 0,
+          thumbnail:   d.thumbnail   || h.thumbnail,
+          description: h.description,
+        };
+      });
+
+      renderResultsCards();
+      saveHandles();
+
+    } catch (err) {
+      toast('Erro na busca: ' + err.message, 'error', 7000);
+      $('handlesResults').innerHTML = '<div style="padding:20px;color:var(--accent)">Erro: ' + esc(err.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function renderResultsCards() {
+    const container = $('handlesResults');
+    container.innerHTML = '';
+    currentResults.forEach((r, i) => {
+      const div = document.createElement('div');
+      div.className = 'handle-result';
+      div.innerHTML = `
+        <img class="handle-result-thumb" src="${esc(r.thumbnail)}" onerror="this.style.background='var(--bg3)';this.src=''">
+        <div class="handle-result-info">
+          <div class="handle-result-name">${esc(r.title)}</div>
+          <div class="handle-result-handle">${r.handle ? '@' + esc(r.handle.replace(/^@/, '')) : '<sem handle>'}</div>
+          <div class="handle-result-meta">${fmtNum(r.subscribers)} inscritos · ID: <code style="font-size:10px">${esc(r.channelId)}</code></div>
+          ${r.description ? `<div class="handle-result-desc">${esc(r.description)}</div>` : ''}
+        </div>
+        <div class="handle-result-actions">
+          <button class="btn btn-sm btn-accent" data-idx="${i}">É esse!</button>
+          <a class="btn btn-sm btn-ghost" href="https://youtube.com/channel/${esc(r.channelId)}" target="_blank">Abrir ↗</a>
+        </div>
+      `;
+      div.querySelector('button[data-idx]').addEventListener('click', () => selectResult(i));
+      container.appendChild(div);
+    });
+  }
+
+  function selectResult(idx) {
+    const name = $('handlesCurrentName').textContent;
+    const r    = currentResults[idx];
+    if (!name || !r) return;
+    handlesState.results[name] = {
+      status:      'resolved',
+      handle:      r.handle,
+      channelId:   r.channelId,
+      channelName: r.title,
+      subscribers: r.subscribers,
+      thumbnail:   r.thumbnail,
+      resolvedAt:  new Date().toISOString(),
+    };
+    saveHandles();
+    renderResolvedList();
+    toast(`✓ "${name}" → @${r.handle || '(sem handle)'}`, 'success', 4000);
+    $('handlesSearchPanel').style.display = 'none';
+    // Auto-avança pra próxima busca se ainda houver quota
+    setTimeout(() => {
+      if (getNextPendingName() && todaySearchCount() < (handlesState.dailyLimit || 5)) {
+        searchNext();
+      }
+    }, 600);
+  }
+
+  function skipCurrent(reason) {
+    const name = $('handlesCurrentName').textContent;
+    if (!name) { toast('Nenhum nome ativo.', 'error'); return; }
+    handlesState.results[name] = {
+      status:     'skipped',
+      reason:     reason,   // 'no_match' | 'no_youtube'
+      resolvedAt: new Date().toISOString(),
+    };
+    saveHandles();
+    renderResolvedList();
+    toast(`↷ "${name}" pulado (${reason === 'no_youtube' ? 'sem YouTube' : 'nenhum match'}).`, 'info', 4000);
+    $('handlesSearchPanel').style.display = 'none';
+    // Pular NÃO conta como nova busca, então pode auto-avançar se ainda houver quota
+    setTimeout(() => {
+      if (getNextPendingName() && todaySearchCount() < (handlesState.dailyLimit || 5)) {
+        searchNext();
+      }
+    }, 600);
+  }
+
+  function renderHandlesStats() {
+    const total     = handlesState.names.length;
+    let resolved = 0, skipped = 0;
+    for (const name of handlesState.names) {
+      const r = handlesState.results[name];
+      if (r?.status === 'resolved') resolved++;
+      else if (r?.status === 'skipped') skipped++;
+    }
+    const remaining = total - resolved - skipped;
+    const today     = todaySearchCount();
+
+    $('handlesTotal').textContent     = total;
+    $('handlesResolved').textContent  = resolved;
+    $('handlesSkipped').textContent   = skipped;
+    $('handlesRemaining').textContent = remaining;
+    $('handlesToday').textContent     = today;
+
+    $('handlesResolvedPanel').style.display = (resolved + skipped) ? 'block' : 'none';
+  }
+
+  function toggleResolvedList() {
+    const el = $('handlesResolvedList');
+    const open = el.style.display !== 'none';
+    el.style.display = open ? 'none' : 'block';
+    if (!open) renderResolvedList();
+  }
+
+  function renderResolvedList() {
+    const el = $('handlesResolvedList');
+    if (!el || el.style.display === 'none') return;
+    el.innerHTML = '';
+    const entries = handlesState.names
+      .map(n => ({ name: n, r: handlesState.results[n] }))
+      .filter(e => e.r && e.r.status !== 'pending');
+
+    if (!entries.length) {
+      el.innerHTML = '<div class="text-muted" style="padding:14px">Nenhum resolvido ainda.</div>';
+      return;
+    }
+
+    for (const { name, r } of entries) {
+      const row = document.createElement('div');
+      row.className = 'handles-resolved-row' + (r.status === 'skipped' ? ' skipped' : '');
+      if (r.status === 'resolved') {
+        row.innerHTML = `
+          <span>✓</span>
+          <strong title="${esc(name)}">${esc(name)}</strong>
+          <span>${r.handle ? '@'+esc(r.handle.replace(/^@/,'')) : '<sem handle>'}</span>
+          <span>${fmtNum(r.subscribers || 0)}</span>
+          <a href="https://youtube.com/channel/${esc(r.channelId)}" target="_blank" style="color:#2563eb;text-decoration:none">abrir↗</a>
+        `;
+      } else {
+        row.innerHTML = `
+          <span>↷</span>
+          <strong title="${esc(name)}">${esc(name)}</strong>
+          <span class="text-muted" style="grid-column:3/-1">${r.reason === 'no_youtube' ? 'sem canal no YouTube' : 'nenhum match'}</span>
+        `;
+      }
+      el.appendChild(row);
+    }
+  }
+
+  function exportHandlesCSV() {
+    if (!handlesState.names.length) { toast('Nada pra exportar.', 'error'); return; }
+    const header = ['Nome Original', 'Status', 'Handle', 'Nome do Canal', 'ID do Canal', 'Inscritos', 'URL', 'Razão'];
+    const rows   = [header];
+
+    for (const name of handlesState.names) {
+      const r = handlesState.results[name];
+      if (!r) {
+        rows.push([name, 'pendente', '', '', '', '', '', '']);
+      } else if (r.status === 'resolved') {
+        rows.push([
+          name, 'resolvido',
+          r.handle ? '@'+r.handle.replace(/^@/,'') : '',
+          r.channelName || '',
+          r.channelId   || '',
+          r.subscribers || '',
+          r.channelId ? `https://youtube.com/channel/${r.channelId}` : '',
+          '',
+        ]);
+      } else {
+        rows.push([name, 'pulado', '', '', '', '', '', r.reason || '']);
+      }
+    }
+
+    const csv = rows.map(r =>
+      r.map(c => {
+        const s = String(c ?? '');
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }).join(',')
+    ).join('\n');
+
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const a    = Object.assign(document.createElement('a'), {
+      href:     URL.createObjectURL(blob),
+      download: `handles-resolvidos-${dateTag()}.csv`,
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('✓ CSV exportado!', 'success');
+  }
+
+  /* ─────────────────────────────────────────────────────────────
      INIT
   ───────────────────────────────────────────────────────────────*/
   function init() {
@@ -1960,6 +2313,7 @@
     initGalleryToggle();
     initShowAllRows();
     initPrivateTab();
+    initHandlesTab();
     renderLists();
 
     const lists = Storage.loadLists();

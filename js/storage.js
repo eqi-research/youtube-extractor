@@ -11,6 +11,7 @@ const Storage = (() => {
   const KEY_WORKER_URL    = 'yte_transcript_worker_url';
   const KEY_SUPADATA_KEY  = 'yte_supadata_api_key';
   const KEY_PROJECT_PATH  = 'yte_python_project_path';
+  const KEY_HANDLES_STATE = 'yte_handles_resolver';
 
   // Caminho padrão pra pasta python-transcript-downloader (ajustável via UI)
   const DEFAULT_PROJECT_PATH = 'C:\\Users\\RenatoSantiagoDeOliv\\OneDrive - EQI Investimentos\\Área de Trabalho\\git_\\youtube-extractor\\python-transcript-downloader';
@@ -34,6 +35,19 @@ const Storage = (() => {
   /* ── Python script project path ─────────────────────────────── */
   function saveProjectPath(p) { localStorage.setItem(KEY_PROJECT_PATH, p); }
   function loadProjectPath()  { return localStorage.getItem(KEY_PROJECT_PATH) || DEFAULT_PROJECT_PATH; }
+
+  /* ── Handles resolver state (Anbima list etc.) ──────────────── */
+  function loadHandlesState() {
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY_HANDLES_STATE));
+      return s || { names: [], results: {}, dailyLimit: 5, history: {} };
+    } catch {
+      return { names: [], results: {}, dailyLimit: 5, history: {} };
+    }
+  }
+  function saveHandlesState(state) {
+    localStorage.setItem(KEY_HANDLES_STATE, JSON.stringify(state));
+  }
 
   /* ── Lists ─────────────────────────────────────────────────── */
   function loadLists() {
@@ -131,6 +145,7 @@ const Storage = (() => {
     saveWorkerUrl, loadWorkerUrl,
     saveSupadataKey, loadSupadataKey,
     saveProjectPath, loadProjectPath,
+    loadHandlesState, saveHandlesState,
     loadLists, saveLists,
     createList, updateList, deleteList, duplicateList,
     addChannelToList, removeChannelFromList,

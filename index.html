@@ -32,6 +32,7 @@
     <nav class="tab-nav">
       <button class="tab-btn active" data-tab="open">Open</button>
       <button class="tab-btn"        data-tab="private">&#128274; Private</button>
+      <button class="tab-btn"        data-tab="handles">&#128270; Handles</button>
     </nav>
 
     <!-- API Key (Open tab only) -->
@@ -483,6 +484,82 @@
 
     </div>
   </div><!-- /tab-private -->
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  TAB: HANDLES                                           -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="tab-handles" class="tab-pane" style="display:none">
+    <div class="handles-layout">
+
+      <!-- Cabeçalho com estatísticas -->
+      <section class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">&#128270; Resolver Handles do YouTube</h2>
+          <button id="handlesExportBtn" class="btn btn-sm btn-accent">&#8681; Exportar CSV</button>
+        </div>
+        <p class="text-muted" style="font-size:13px">
+          Cole uma lista de nomes (1 por linha). Pra cada nome, a app busca no YouTube e mostra os top 5 canais —
+          você confirma qual é o certo. <strong>Cada busca consome 100 unidades de quota.</strong>
+          Vai por dia até resolver todos.
+        </p>
+
+        <div class="handles-stats">
+          <span class="hs-card">Lista total: <strong id="handlesTotal">0</strong></span>
+          <span class="hs-card hs-ok">Resolvidos: <strong id="handlesResolved">0</strong></span>
+          <span class="hs-card hs-skip">Pulados: <strong id="handlesSkipped">0</strong></span>
+          <span class="hs-card hs-pending">Restantes: <strong id="handlesRemaining">0</strong></span>
+          <span class="hs-card hs-today">
+            Hoje: <strong id="handlesToday">0</strong>/<input type="number" id="handlesDailyLimit" value="5" min="1" max="100" style="width:42px">
+            <span class="text-muted" style="font-size:11px">(buscas)</span>
+          </span>
+        </div>
+      </section>
+
+      <!-- Cola lista -->
+      <section class="panel">
+        <h3 class="section-title">Lista de nomes</h3>
+        <textarea id="handlesPaste" rows="5"
+                  placeholder="Pedro Investidor&#10;Maria Finanças&#10;João Bolsa&#10;..."
+                  style="width:100%;padding:10px;font-family:inherit;font-size:13px;border:1px solid var(--border);border-radius:6px;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button id="handlesLoadBtn"  class="btn btn-sm btn-accent">+ Adicionar à fila</button>
+          <button id="handlesNextBtn"  class="btn btn-sm btn-accent">&#9654; Buscar próximo</button>
+          <button id="handlesClearBtn" class="btn btn-sm btn-danger">Limpar tudo</button>
+        </div>
+      </section>
+
+      <!-- Painel de busca atual -->
+      <section class="panel" id="handlesSearchPanel" style="display:none">
+        <div class="panel-header">
+          <h3 class="section-title" style="margin:0">
+            Buscando: <span id="handlesCurrentName" style="color:var(--accent)"></span>
+          </h3>
+          <span class="text-muted" id="handlesPositionLabel"></span>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input type="text" id="handlesAltQuery" class="input input-sm"
+                 placeholder="Buscar com outro termo (opcional)"
+                 style="flex:1;min-width:200px">
+          <button id="handlesAltSearchBtn" class="btn btn-sm btn-ghost">Buscar de novo</button>
+          <button id="handlesNoMatchBtn"   class="btn btn-sm btn-ghost">Nenhum dos resultados</button>
+          <button id="handlesSkipBtn"      class="btn btn-sm btn-danger">Pular (sem canal no YouTube)</button>
+        </div>
+
+        <div id="handlesResults"></div>
+      </section>
+
+      <!-- Tabela dos já resolvidos -->
+      <section class="panel" id="handlesResolvedPanel" style="display:none">
+        <div class="panel-header">
+          <h3 class="section-title" style="margin:0">Já resolvidos</h3>
+          <button id="handlesShowResolvedBtn" class="btn btn-sm btn-ghost">Mostrar / Esconder</button>
+        </div>
+        <div id="handlesResolvedList" style="display:none;max-height:300px;overflow-y:auto"></div>
+      </section>
+
+    </div>
+  </div><!-- /tab-handles -->
 
   <div id="toastContainer" class="toast-container"></div>
 

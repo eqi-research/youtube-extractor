@@ -313,6 +313,40 @@ const YTAPI = (() => {
     return allRows;
   }
 
-  return { resolveChannel, extractVideos };
+  /* ── Search channels by name (costs 100 units!) ─────────────── */
+  // Returns the top N matching channels with snippet info only.
+  // Use getChannelsDetails() afterwards to enrich with subscribers + handle.
+  async function searchChannels(query, apiKey, maxResults = 5) {
+    const data = await get('search', {
+      part:              'snippet',
+      type:              'channel',
+      q:                 query,
+      maxResults,
+      regionCode:        'BR',  // tendência pra resultados brasileiros
+      relevanceLanguage: 'pt',
+    }, apiKey);
+
+    return (data.items || []).map(item => ({
+      channelId:   item.snippet.channelId,
+      title:       item.snippet.title || '',
+      description: (item.snippet.description || '').substring(0, 200),
+      thumbnail:   item.snippet.thumbnails?.medium?.url
+                || item.snippet.thumbnails?.default?.url
+                || '',
+    }));
+  }
+
+  /* ── Get full details (subscribers + handle) for multiple IDs ─ */
+  async function getChannelsDetails(channelIds, apiKey) {
+    if (!channelIds.length) return [];
+    const data = await get('channels', {
+      part: 'snippet,statistics',
+      id:   channelIds.join(','),
+      maxResults: 50,
+    }, apiKey);
+    return (data.items || []).map(mapChannelItem);
+  }
+
+  return { resolveChannel, extractVideos, searchChannels, getChannelsDetails };
 
 })();
