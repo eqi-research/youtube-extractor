@@ -12,6 +12,7 @@ const Storage = (() => {
   const KEY_SUPADATA_KEY  = 'yte_supadata_api_key';
   const KEY_PROJECT_PATH  = 'yte_python_project_path';
   const KEY_HANDLES_STATE = 'yte_handles_resolver';
+  const KEY_VIDIQ_TRENDING = 'yte_vidiq_trending';
 
   // Caminho padrão pra pasta python-transcript-downloader (ajustável via UI)
   const DEFAULT_PROJECT_PATH = 'C:\\Users\\RenatoSantiagoDeOliv\\OneDrive - EQI Investimentos\\Área de Trabalho\\git_\\youtube-extractor\\python-transcript-downloader';
@@ -119,6 +120,15 @@ const Storage = (() => {
     saveLists(lists);
   }
 
+  /* ── VidIQ Trending (resultados importados) ─────────────────── */
+  function loadVidiqTrending() {
+    try { return JSON.parse(localStorage.getItem(KEY_VIDIQ_TRENDING)) || null; }
+    catch { return null; }
+  }
+  function saveVidiqTrending(data) {
+    localStorage.setItem(KEY_VIDIQ_TRENDING, JSON.stringify(data));
+  }
+
   /* ── Analytics presets ─────────────────────────────────────── */
   function loadAnalyticsPresets() {
     try { return JSON.parse(localStorage.getItem(KEY_PRESETS)) || []; }
@@ -146,6 +156,7 @@ const Storage = (() => {
     saveSupadataKey, loadSupadataKey,
     saveProjectPath, loadProjectPath,
     loadHandlesState, saveHandlesState,
+    loadVidiqTrending, saveVidiqTrending,
     loadLists, saveLists,
     createList, updateList, deleteList, duplicateList,
     addChannelToList, removeChannelFromList,

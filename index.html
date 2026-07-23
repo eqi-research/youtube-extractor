@@ -33,6 +33,7 @@
       <button class="tab-btn active" data-tab="open">Open</button>
       <button class="tab-btn"        data-tab="private">&#128274; Private</button>
       <button class="tab-btn"        data-tab="handles">&#128270; Handles</button>
+      <button class="tab-btn"        data-tab="vidiq">&#128293; Trending</button>
     </nav>
 
     <!-- API Key (Open tab only) -->
@@ -560,6 +561,46 @@
 
     </div>
   </div><!-- /tab-handles -->
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  TAB: TRENDING (VidIQ)                                  -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="tab-vidiq" class="tab-pane" style="display:none">
+    <div class="handles-layout">
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">&#128293; Trending Videos (VidIQ)</h2>
+        </div>
+        <p class="text-muted" style="font-size:13px">
+          Mostra os vídeos "em alta" (maior views/hora) de cada canal, segundo a extensão VidIQ.
+          Fluxo: <strong>1)</strong> escolha uma lista abaixo e exporte os canais em JSON &nbsp;·&nbsp;
+          <strong>2)</strong> peça pro Claude coletar o Trending desses canais no seu navegador (com a extensão VidIQ ativa) &nbsp;·&nbsp;
+          <strong>3)</strong> importe aqui o JSON de resultados que ele te devolver.
+        </p>
+
+        <div class="vidiq-controls">
+          <select id="vidiqListSelect" class="input input-sm" style="flex:1;min-width:220px">
+            <option value="">— escolha uma lista —</option>
+          </select>
+          <button id="vidiqExportBtn" class="btn btn-sm btn-accent">&#8681; Exportar canais (JSON)</button>
+          <button id="vidiqImportBtn" class="btn btn-sm btn-ghost">&#8679; Importar resultados (JSON)</button>
+          <input type="file" id="vidiqImportFile" accept=".json" style="display:none">
+        </div>
+      </section>
+
+      <section class="panel" id="vidiqResultsPanel" style="display:none">
+        <div class="panel-header">
+          <h3 class="section-title" style="margin:0">
+            Resultados <span class="text-muted" id="vidiqResultsMeta" style="font-weight:400"></span>
+          </h3>
+          <button id="vidiqClearBtn" class="btn btn-sm btn-danger">Limpar resultados</button>
+        </div>
+        <div id="vidiqResults"></div>
+      </section>
+
+    </div>
+  </div><!-- /tab-vidiq -->
 
   <div id="toastContainer" class="toast-container"></div>
 

@@ -1240,8 +1240,9 @@
         const tab = btn.dataset.tab;
         document.querySelectorAll('.tab-btn').forEach(b  => b.classList.toggle('active', b.dataset.tab === tab));
         document.querySelectorAll('.tab-pane').forEach(p => p.style.display = p.id === `tab-${tab}` ? '' : 'none');
-        // API key visível em Open e Handles (ambas usam Data API v3). Em Private usa OAuth.
-        $('apikeyArea').style.display = tab === 'private' ? 'none' : 'flex';
+        // API key visível em Open e Handles (ambas usam Data API v3). Private (OAuth) e Trending (VidIQ) não usam.
+        $('apikeyArea').style.display = (tab === 'private' || tab === 'vidiq') ? 'none' : 'flex';
+        if (tab === 'vidiq') renderVidiqTab();
       });
     });
   }
@@ -2299,6 +2300,121 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
+     TRENDING (VidIQ)
+  ───────────────────────────────────────────────────────────────*/
+  function initVidiqTab() {
+    $('vidiqExportBtn').addEventListener('click', exportVidiqChannels);
+    $('vidiqImportBtn').addEventListener('click', () => $('vidiqImportFile').click());
+    $('vidiqImportFile').addEventListener('change', onImportVidiqResults);
+    $('vidiqClearBtn').addEventListener('click', clearVidiqResults);
+  }
+
+  // Chamado toda vez que a aba é aberta, pra refletir listas novas/renomeadas
+  function renderVidiqTab() {
+    const select = $('vidiqListSelect');
+    const lists  = Storage.loadLists();
+    const prev   = select.value;
+    select.innerHTML = '<option value="">— escolha uma lista —</option>' +
+      lists.map(l => `<option value="${esc(l.id)}">${esc(l.name)} (${l.channels.length})</option>`).join('');
+    if (lists.some(l => l.id === prev)) select.value = prev;
+
+    renderVidiqResults(Storage.loadVidiqTrending());
+  }
+
+  function exportVidiqChannels() {
+    const listId = $('vidiqListSelect').value;
+    if (!listId) { toast('Escolha uma lista primeiro.', 'error'); return; }
+    const list = Storage.loadLists().find(l => l.id === listId);
+    if (!list) { toast('Lista não encontrada.', 'error'); return; }
+    if (!list.channels.length) { toast('Essa lista não tem canais.', 'error'); return; }
+
+    const payload = {
+      listId:   list.id,
+      listName: list.name,
+      exportedAt: new Date().toISOString(),
+      channels: list.channels.map(c => ({
+        id:     c.id,
+        handle: c.handle || '',
+        name:   c.name,
+      })),
+    };
+    downloadJSON(payload, `vidiq-canais-${slug(list.name)}.json`);
+    toast(`✓ ${list.channels.length} canais exportados. Passe esse JSON pro Claude coletar o Trending.`, 'success', 6000);
+  }
+
+  function onImportVidiqResults(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!Array.isArray(data.channels)) throw new Error('Formato inválido (esperado { channels: [...] })');
+        Storage.saveVidiqTrending(data);
+        renderVidiqResults(data);
+        toast(`✓ Resultados importados: ${data.channels.length} canais.`, 'success');
+      } catch (err) { toast('Arquivo inválido: ' + err.message, 'error'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  async function clearVidiqResults() {
+    const ok = await showModal({
+      message: 'Limpar os resultados de Trending importados? Isso não pode ser desfeito.',
+      confirmLabel: 'Limpar', dangerConfirm: true,
+    });
+    if (!ok) return;
+    Storage.saveVidiqTrending(null);
+    renderVidiqResults(null);
+    toast('Resultados limpos.', 'info');
+  }
+
+  function renderVidiqResults(data) {
+    const panel = $('vidiqResultsPanel');
+    const meta  = $('vidiqResultsMeta');
+    const container = $('vidiqResults');
+
+    if (!data || !Array.isArray(data.channels) || !data.channels.length) {
+      panel.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+
+    panel.style.display = '';
+    const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString('pt-BR') : '';
+    meta.textContent = `${data.listName || ''} · ${data.channels.length} canais${when ? ' · coletado em ' + when : ''}`;
+
+    container.innerHTML = data.channels.map(ch => {
+      const videos = [...(ch.videos || [])].sort((a, b) => (b.vph || 0) - (a.vph || 0));
+      const cards = videos.map(v => `
+        <div class="gallery-card">
+          <img class="gallery-thumb" src="${esc(v.thumbnail || '')}" alt="" loading="lazy" onerror="this.style.background='var(--bg4)';this.src=''">
+          <div class="gallery-info">
+            <h3 class="gallery-title">${esc(v.title || '(sem título)')}</h3>
+            <div class="gallery-meta">
+              ${v.ageText ? `<span>${esc(v.ageText)}</span>` : ''}
+              ${v.durationText ? `<span>⏱ ${esc(v.durationText)}</span>` : ''}
+            </div>
+            <div class="gallery-stats">
+              ${v.viewsText ? `<span class="gallery-views">▶ ${esc(v.viewsText)}</span>` : ''}
+              ${v.vph != null ? `<span class="vph-badge">${esc(v.vph)} VPH</span>` : ''}
+              ${v.outlierMultiplier ? `<span class="outlier-badge">${esc(v.outlierMultiplier)}x</span>` : ''}
+            </div>
+            ${v.url ? `<a class="gallery-link" href="${esc(v.url)}" target="_blank">Abrir no YouTube ↗</a>` : ''}
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="vidiq-channel-section">
+          <h3 class="section-title">${esc(ch.name || ch.handle || ch.id)}</h3>
+          ${videos.length ? `<div class="data-gallery">${cards}</div>` : '<div class="gallery-empty">Sem vídeos em trending pra esse canal.</div>'}
+        </div>
+      `;
+    }).join('');
+  }
+
+  /* ─────────────────────────────────────────────────────────────
      INIT
   ───────────────────────────────────────────────────────────────*/
   function init() {
@@ -2314,6 +2430,7 @@
     initShowAllRows();
     initPrivateTab();
     initHandlesTab();
+    initVidiqTab();
     renderLists();
 
     const lists = Storage.loadLists();

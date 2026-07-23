@@ -1030,3 +1030,34 @@ html, body {
 .handles-resolved-row:hover { background: var(--bg2); }
 .handles-resolved-row.skipped { opacity: 0.5; }
 .handles-resolved-row strong { font-weight: 600; }
+
+/* ─── Trending (VidIQ) tab ───────────────────────────────────── */
+.vidiq-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.vidiq-channel-section { margin-bottom: 24px; }
+.vidiq-channel-section:last-child { margin-bottom: 0; }
+.vph-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg4);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12px;
+}
+.outlier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+}
